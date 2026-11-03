@@ -1,0 +1,97 @@
+# Outcome semantics (implementation-plan.md §4). Read by the decision-policy engine (Part 3),
+# the Verifier, the synthetic-data generator and the evaluation harness.
+version: 1
+
+outcomes:
+  CONSISTENT: Consistent with the official record
+  CONFLICTS: Conflicts with the official record
+  UNVERIFIED: Could not verify
+
+hard_conflicts:
+  - id: HC1
+    text: A deciding contact point in the offer appears on an official alert, warning or unlicensed list.
+  - id: HC2
+    text: The offer's named entity appears on an official warning or unlicensed list (exact normalised name or listed alias).
+  - id: HC3
+    text: The offer claims an authorisation (regulator, licence or reference number) that the register contradicts.
+  - id: HC4
+    text: The matched licence does not cover the offered activity under the competent regulator's scope rule.
+  - id: HC5
+    text: A deciding contact point imitates the official domain, or differs from a legitimate contact the regulator itself states.
+  - id: HC6
+    text: The payment beneficiary differs from the claimed firm's registered legal name.
+
+consistent_conditions:
+  - id: K1
+    text: The claimed firm matches exactly one register entry (exact, alias, or fuzzy confirmed by a second identifier).
+  - id: K2
+    text: That regulator is in the agreed relevant set for the offered activity and zone.
+  - id: K3
+    text: The entry is active (not IPA-only, withdrawn or suspended) and the licence covers the activity.
+  - id: K4
+    text: Every deciding contact point matches the official record; "not on record" fails.
+  - id: K5
+    text: No checked list names the offer's contact points or names the entity as unauthorised; no unresolved conflict.
+  - id: K6
+    text: Every relevant regulator was checked; an uncovered relevant regulator rules out CONSISTENT.
+  - id: K7
+    text: Every claim behind K1–K6 cites valid evidence.
+
+unverified_reasons:
+  - id: U1
+    text: No matching entry on any checked register.
+  - id: U2
+    text: A relevant regulator is not covered yet.
+  - id: U3
+    text: Deciding contact points are not on the official record, or cannot be compared.
+  - id: U4
+    text: Identity is ambiguous.
+  - id: U5
+    text: A conflict between agents remained unresolved after the round limit.
+  - id: U6
+    text: A Verifier veto was not cleared after remediation.
+  - id: U7
+    text: Tool, data or model failure; stale snapshot; or request budget used up.
+  - id: U8
+    text: The named regulator is not a UAE financial regulator.
+
+precedence:
+  - id: P1
+    text: Evidence beats assertion.
+  - id: P2
+    text: Specific official statements beat inference.
+  - id: P3
+    text: The competent regulator's scope rule beats general jurisdiction heuristics.
+  - id: P4
+    text: Zone carve-outs beat emirate defaults; targeting rules can add a regulator, never remove one.
+  - id: P5
+    text: Overlap is not conflict; the relevant set is the union of supported claims.
+  - id: P6
+    text: More recent dated records govern; staleness is disclosed.
+  - id: P7
+    text: Unresolved after limits means the most cautious result the evidence supports; never CONSISTENT.
+
+# Which contact details can decide a result (§4.7).
+contact_roles:
+  url: deciding
+  domain: deciding
+  email: deciding
+  phone: deciding
+  whatsapp: deciding
+  iban: deciding
+  wallet: deciding
+  address: reported
+  telegram: reported
+  social_handle: reported
+  licence_ref: reported
+  short_link: not_comparable
+
+# Starting values; calibrated on the development split only (Part 6).
+thresholds:
+  staleness_days: 60
+  name_fuzzy_tau1: 92
+  name_partial_tau2: 90
+  partial_min_length: 6
+  lookalike_max_edit_distance: 2
+  lookalike_min_similarity: 0.85
+  lookalike_min_brand_length: 5

@@ -1,0 +1,28 @@
+# CMA scope rules, in our own words, with citations.
+version: 1
+rules:
+  - id: SCOPE-CMA-01
+    regulator: CMA
+    statement: A CMA Category 5 licence "does not in any way authorize" FX or derivatives trading.
+    applies_when: [regulator:CMA, licence_category:5, activity:DER.FX_CFD]
+    effect: licence_scope:not_covered (hard conflict HC4)
+    status: verified_primary
+    sources:
+      - title: Notice on the CMA Licensed Companies page, as recorded in PS.md (source [5])
+        url: https://www.uaecma.gov.ae/en/open-data/licensed-companies.aspx
+        note: Per PS.md; the page was last modified on 2 November 2026.
+    last_reviewed: 2026-11-03
+
+  - id: SCOPE-CMA-02
+    regulator: CMA
+    statement: >-
+      Category 5 covers introduction, promotion and financial consultation; acting as a trading
+      broker in OTC derivatives and spot FX falls under Category 1.
+    applies_when: [regulator:CMA, licence_category:5]
+    effect: licence_scope:covered for SEC.PROMOTION and SEC.ADVICE only
+    status: needs_verification
+    sources:
+      - title: Broker announcements in the trade press (2025–26), e.g. FX News Group on a Category Five licence
+        url: https://fxnewsgroup.com/forex-news/retail-forex/exclusive-cfds-broker-startrader-adds-uae-sca-category-five-license
+        note: Secondary; verify against the CMA rulebook.
+    last_reviewed: 2026-11-03

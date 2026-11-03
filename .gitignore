@@ -1,0 +1,39 @@
+# ---------------------------------------------------------------------------
+# Local-only by policy. NEVER commit these (implementation-plan.md §12.7).
+# The commit guard (scripts/check_restricted.py) blocks them even with `git add -f`.
+# ---------------------------------------------------------------------------
+PS.md
+.env
+.env.*
+!.env.example
+data/inbox/
+data/snapshots/
+data/restricted/
+data/handrecords/*
+!data/handrecords/README.md
+!data/handrecords/templates/
+datasets/*
+!datasets/README.md
+runs/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# --- Node (frontend, Part 5) ---
+node_modules/
+.next/
+frontend/out/
+
+# --- OS and editors ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

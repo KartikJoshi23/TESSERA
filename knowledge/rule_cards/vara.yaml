@@ -1,0 +1,31 @@
+# VARA scope rules, in our own words, with citations.
+version: 1
+rules:
+  - id: SCOPE-VARA-01
+    regulator: VARA
+    statement: >-
+      In-Principle Approval (IPA) is not a licence. IPA holders appear on the VARA register but
+      may not serve clients until fully licensed.
+    applies_when: [regulator:VARA, register_status:IPA]
+    effect: licence_status:not_active_for_clients (HC3 if the offer claims a licence; HC4 if it offers services)
+    status: needs_verification
+    sources:
+      - title: VARA Public Register (lists IPA holders separately), as recorded in PS.md
+        url: https://www.vara.ae/en/licenses-and-register/public-register/
+      - title: Secondary licensing guides (2026)
+        note: Verify against VARA's rulebooks.
+    last_reviewed: 2026-11-03
+
+  - id: SCOPE-VARA-02
+    regulator: VARA
+    statement: >-
+      VARA licences are activity-specific (for example advisory, broker-dealer, custody,
+      exchange, lending and borrowing, management and investment, transfer and settlement,
+      issuance). An activity not listed on the entry is not licensed.
+    applies_when: [regulator:VARA, register_status:LICENSED]
+    effect: licence_scope:covered only for listed activities
+    status: needs_verification
+    sources:
+      - title: VARA (to cite)
+        url: https://www.vara.ae/
+    last_reviewed: 2026-11-03

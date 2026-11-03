@@ -1,0 +1,192 @@
+# Access, storage and linking rules for every data source.
+# Enforced in code by tessera.governance (implementation-plan.md §8–§9).
+# Invariants checked when this file loads:
+#   * no UAE regulator source may allow automated access or framing;
+#   * restricted sources store hand-recorded facts only, link to the homepage only,
+#     and are never released without written permission.
+version: 1
+
+network:
+  # Automated access to these domains and their subdomains is always blocked.
+  deny_automated_domains:
+    - dfsa.ae
+    - uaecma.gov.ae
+    - sca.gov.ae
+    - vara.ae
+    - centralbank.ae
+    - adgm.com
+  # The only hosts the LLM client may call (Part 2). Free NVIDIA API catalog.
+  allowed_llm_hosts:
+    - integrate.api.nvidia.com
+
+sources:
+  cma_licensed:
+    name: CMA Licensed Companies
+    regulator: CMA
+    phase: 1
+    enabled: true
+    access_method: manual_export
+    automated_access: false
+    storage: snapshot
+    restricted: false
+    homepage: https://www.uaecma.gov.ae/
+    page_url: https://www.uaecma.gov.ae/en/open-data/licensed-companies.aspx
+    deep_links_allowed: true
+    framing_allowed: false
+    public_release: rehydration_only
+    notes: >-
+      Manual "Export To Excel" only. The CMA terms forbid "increasing load to or immersing"
+      the site and weakness testing; direct links are allowed; pages may not be framed.
+
+  cma_warnings:
+    name: CMA Warnings
+    regulator: CMA
+    phase: 1
+    enabled: true
+    access_method: hand_record
+    automated_access: false
+    storage: snapshot
+    restricted: false
+    homepage: https://www.uaecma.gov.ae/
+    page_url: https://www.uaecma.gov.ae/en/open-data/warnings
+    deep_links_allowed: true
+    framing_allowed: false
+    public_release: rehydration_only
+    notes: Recorded by hand from the public page.
+
+  vara_register:
+    name: VARA Public Register
+    regulator: VARA
+    phase: 1
+    enabled: true
+    access_method: hand_record
+    automated_access: false
+    storage: snapshot
+    restricted: false
+    homepage: https://www.vara.ae/
+    page_url: https://www.vara.ae/en/licenses-and-register/public-register/
+    deep_links_allowed: true
+    framing_allowed: false
+    public_release: rehydration_only
+    notes: >-
+      Copied by hand at a low rate. Licensed VASPs and In-Principle Approval holders are kept
+      separate. VARA terms: personal non-commercial use; no copying for publication or
+      distribution.
+
+  vara_unlicensed:
+    name: VARA Unlicensed VASPs
+    regulator: VARA
+    phase: 1
+    enabled: true
+    access_method: hand_record
+    automated_access: false
+    storage: snapshot
+    restricted: false
+    homepage: https://www.vara.ae/
+    page_url: https://www.vara.ae/en/enforcement/unlicensed-vasps/
+    deep_links_allowed: true
+    framing_allowed: false
+    public_release: rehydration_only
+    notes: 38 entries per PS.md; latest dated 2026-01-13.
+
+  dfsa_register:
+    name: DFSA Public Register (hand-recorded facts)
+    regulator: DFSA
+    phase: 1
+    enabled: true
+    access_method: hand_record
+    automated_access: false
+    storage: restricted_facts
+    restricted: true
+    homepage: https://www.dfsa.ae/
+    page_url: null
+    deep_links_allowed: false
+    framing_allowed: false
+    public_release: with_permission
+    notes: >-
+      Bot-protected. The DFSA Legal Disclaimer bars storage in any retrieval system, caching
+      and any link other than the homepage. Minimal facts recorded by a person, for internal
+      research only; loaded only in RESEARCH_INTERNAL mode; masked before any model call.
+
+  dfsa_alerts:
+    name: DFSA Alerts (hand-recorded facts)
+    regulator: DFSA
+    phase: 1
+    enabled: true
+    access_method: hand_record
+    automated_access: false
+    storage: restricted_facts
+    restricted: true
+    homepage: https://www.dfsa.ae/
+    page_url: null
+    deep_links_allowed: false
+    framing_allowed: false
+    public_release: with_permission
+    notes: Same rules as dfsa_register. Our own category labels; no DFSA wording is stored.
+
+  cbuae_register:
+    name: CBUAE Register
+    regulator: CBUAE
+    phase: 2
+    enabled: false
+    access_method: manual_download
+    automated_access: false
+    storage: snapshot
+    restricted: false
+    homepage: https://centralbank.ae/
+    page_url: https://centralbank.ae/en/licensing/
+    deep_links_allowed: true
+    framing_allowed: false
+    public_release: rehydration_only
+    attribution: © Central Bank of the UAE
+    notes: Part 8. Personal, organisational or non-commercial use; copies carry the © notice.
+
+  fsra_register:
+    name: ADGM FSRA Public Register
+    regulator: FSRA
+    phase: 2
+    enabled: false
+    access_method: hand_record
+    automated_access: false
+    storage: snapshot
+    restricted: false
+    homepage: https://www.adgm.com/
+    page_url: https://www.adgm.com/public-registers/fsra
+    deep_links_allowed: true
+    framing_allowed: false
+    public_release: rehydration_only
+    notes: Part 8. ADGM terms must be read in full first.
+
+  fsra_alerts:
+    name: ADGM FSRA Regulatory Alerts
+    regulator: FSRA
+    phase: 2
+    enabled: false
+    access_method: hand_record
+    automated_access: false
+    storage: snapshot
+    restricted: false
+    homepage: https://www.adgm.com/
+    page_url: https://www.adgm.com/operating-in-adgm/additional-obligations-of-financial-services-entities/enforcement/regulatory-alerts
+    deep_links_allowed: true
+    framing_allowed: false
+    public_release: rehydration_only
+    notes: Part 8. 11 alerts in 2026 per PS.md.
+
+  iosco_iscan:
+    name: IOSCO I-SCAN (official API)
+    regulator: IOSCO
+    phase: optional
+    enabled: false
+    access_method: api
+    automated_access: true
+    storage: snapshot
+    restricted: false
+    homepage: https://www.iosco.org/
+    page_url: https://www.iosco.org/i-scan/
+    deep_links_allowed: true
+    framing_allowed: false
+    public_release: never
+    notes: >-
+      Only through the official API after signing its Terms of Use (decision D9, Part 8).
+      Incomplete by IOSCO's own statement; absence is never evidence of legitimacy.

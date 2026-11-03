@@ -1,0 +1,123 @@
+# Jurisdiction rules, in our own words, with citations (implementation-plan.md Appendix A).
+# status: verified_primary | verified_secondary | needs_verification | design_principle
+# DFSA sources are cited by homepage only (DFSA terms forbid deep links).
+version: 1
+rules:
+  - id: JUR-01
+    regulator: VARA
+    statement: >-
+      VARA is the competent authority for virtual-asset activity in the Emirate of Dubai,
+      including its free zones, except the DIFC.
+    applies_when: [activity_group:virtual_assets, zone:DUBAI_NON_DIFC]
+    effect: relevance:VARA=primary; zone:DIFC excludes VARA
+    status: verified_primary
+    sources:
+      - title: VARA website footer, as recorded in PS.md (audit table B5)
+        url: https://www.vara.ae/
+        note: Per PS.md; not re-accessed during planning.
+      - title: Clyde & Co, "The UAE Capital Markets Authority replaces the federal VASP framework" (Apr 2026)
+        url: https://www.clydeco.com/en/insights/2026/april/the-uae-capital-markets-authority-replaces-the-fed
+        accessed: 2026-11-03
+    last_reviewed: 2026-11-03
+
+  - id: JUR-02
+    regulator: DFSA
+    statement: The DFSA regulates financial services carried on in or from the DIFC.
+    applies_when: [zone:DIFC]
+    effect: relevance:DFSA=primary
+    status: needs_verification
+    sources:
+      - title: DFSA (cite the governing DIFC law; DFSA linked by homepage only)
+        url: https://www.dfsa.ae/
+    last_reviewed: 2026-11-03
+
+  - id: JUR-03
+    regulator: FSRA
+    statement: The ADGM Financial Services Regulatory Authority regulates financial services in ADGM.
+    applies_when: [zone:ADGM]
+    effect: relevance:FSRA=primary (not covered until Part 8)
+    status: needs_verification
+    sources:
+      - title: ADGM (to cite)
+        url: https://www.adgm.com/
+    last_reviewed: 2026-11-03
+
+  - id: JUR-04
+    regulator: CMA
+    statement: >-
+      Federal Decree-Law No. 33 of 2025 applies to "any person targeting clients within the
+      [UAE], even if their activity is conducted outside the [UAE] or from a financial free
+      zone", provided the activity is otherwise regulated.
+    applies_when: [targets_uae_clients:true]
+    effect: relevance:CMA=possible (adds CMA; never removes another regulator)
+    status: needs_verification
+    sources:
+      - title: Dechert, "From SCA to CMA – More Than Just a Rebrand" (Feb 2026), quoting Art. 2(1)(d)
+        url: https://www.dechert.com/knowledge/onpoint/2026/2/from-sca-to-cma---more-than-just-a-rebrand.html
+      - title: Al Tamimi, "Transformation of the UAE's Capital Markets"
+        url: https://www.tamimi.com/law-update/the-financial-services-edition/articles/transformation-of-the-uaes-capital-markets-a-modern-regulatory-framework/
+    last_reviewed: 2026-11-03
+
+  - id: JUR-05
+    regulator: CMA
+    statement: >-
+      Activities carried on exclusively within the DIFC or ADGM fall outside the CMA's
+      capital-markets scope.
+    applies_when: [zone:DIFC, zone:ADGM]
+    effect: relevance:CMA=not_indicated unless JUR-04 applies
+    status: needs_verification
+    sources:
+      - title: Secondary commentary on Federal Decree-Law No. 33 of 2025 (2026)
+    last_reviewed: 2026-11-03
+
+  - id: JUR-06
+    regulator: CMA
+    statement: >-
+      CMA Decision No. 4/R.M/2026 sets a federal framework for onshore virtual-asset activity
+      (eight activity-based licences), excludes the DIFC and ADGM, and leaves VARA competent for
+      Dubai outside the DIFC.
+    applies_when: [activity_group:virtual_assets, zone:OTHER_EMIRATE]
+    effect: relevance:CMA=primary outside Dubai; relevance:CMA=possible inside Dubai (non-DIFC)
+    status: needs_verification
+    sources:
+      - title: Clyde & Co (Apr 2026)
+        url: https://www.clydeco.com/en/insights/2026/april/the-uae-capital-markets-authority-replaces-the-fed
+        accessed: 2026-11-03
+      - title: Horizlaw, summary of CMA Decision No. 4/R.M/2026
+        url: https://www.horizlaw.ae/insights/new-virtual-asset-regulations-a-summary-of-cma-decision-no4r.m2026
+    last_reviewed: 2026-11-03
+
+  - id: JUR-07
+    regulator: CBUAE
+    statement: The CBUAE regulates onshore banks, finance companies, exchange houses and payment services.
+    applies_when: [activity_group:banking_payments, zone:ONSHORE]
+    effect: relevance:CBUAE=primary (not covered until Part 8)
+    status: needs_verification
+    sources:
+      - title: CBUAE licensing (to cite)
+        url: https://centralbank.ae/en/licensing/
+    last_reviewed: 2026-11-03
+
+  - id: JUR-08
+    regulator: ALL
+    statement: >-
+      Several regulators can be relevant at once; relevance is not a finding about which
+      regulator is competent.
+    applies_when: [always]
+    effect: relevant set is the union of supported relevance claims (precedence rule P5)
+    status: design_principle
+    sources: []
+    last_reviewed: 2026-11-03
+
+  - id: JUR-09
+    regulator: CMA
+    statement: >-
+      "SCA" (Securities and Commodities Authority) refers to the CMA, reconstituted on
+      1 January 2026 under Federal Decree-Laws No. 32 and No. 33 of 2025.
+    applies_when: [claimed_regulator:SCA]
+    effect: treat SCA claims as CMA claims
+    status: verified_primary
+    sources:
+      - title: Federal Decree-Law No. 33 of 2025 on the CMA site; Dechert (Feb 2026), as recorded in PS.md (audit table B1)
+        url: https://www.uaecma.gov.ae/
+    last_reviewed: 2026-11-03

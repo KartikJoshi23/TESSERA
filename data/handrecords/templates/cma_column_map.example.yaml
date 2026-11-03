@@ -1,0 +1,14 @@
+# Optional. Use only if `tessera-ingest cma_licensed …` cannot recognise the Excel headers.
+# Copy next to your export (for example data/inbox/cma_licensed/column_map.yaml), set each value
+# to the exact header text in the export, delete lines for columns that do not exist, and pass
+# the file with --column-map.
+name_en: "Company Name"
+name_ar: "اسم الشركة"
+licence_no: "License No"
+category: "Category"
+activities: "Activities"
+status: "Status"
+emirate: "Emirate"
+website: "Website"
+phone: "Phone"
+email: "Email"

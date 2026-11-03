@@ -1,0 +1,28 @@
+# Rules about impersonation and the limits of list checks.
+version: 1
+rules:
+  - id: CLONE-01
+    regulator: ALL
+    statement: >-
+      A name match on a register does not show that an offer comes from the named firm;
+      impersonators copy names, addresses and reference numbers.
+    applies_when: [register_match:true]
+    effect: contact details decide (conditions K4/K5; hard conflicts HC1/HC5)
+    status: verified_primary
+    sources:
+      - title: DFSA 2026 alerts about impersonated authorised firms (at least ten), as recorded in PS.md
+        url: https://www.dfsa.ae/
+    last_reviewed: 2026-11-03
+
+  - id: CLONE-02
+    regulator: ALL
+    statement: >-
+      Absence from an alert list, including IOSCO I-SCAN, does not show that a firm is
+      legitimate.
+    applies_when: [alert_lookup:no_match]
+    effect: a no-match never supports CONSISTENT on its own (requirement R18)
+    status: verified_primary
+    sources:
+      - title: IOSCO I-SCAN portal disclaimer, as recorded in PS.md
+        url: https://www.iosco.org/i-scan/
+    last_reviewed: 2026-11-03

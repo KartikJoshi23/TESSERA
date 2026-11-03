@@ -1,0 +1,81 @@
+# Activity taxonomy (implementation-plan.md Appendix B).
+# Keywords feed the RULES-ONLY baseline and give agents a shared vocabulary. Lower-case.
+version: 1
+groups:
+  virtual_assets: Virtual assets and crypto
+  capital_markets: Securities, derivatives, FX, advice and funds
+  banking_payments: Banking, lending and payments (CBUAE; Part 8)
+  other: Unclear or not financial
+activities:
+  - code: VA.EXCHANGE
+    group: virtual_assets
+    label: Crypto exchange or trading platform
+    keywords: [crypto exchange, crypto trading, trade crypto, bitcoin trading, btc trading, buy bitcoin, buy crypto, spot crypto, exchange platform]
+  - code: VA.BROKER
+    group: virtual_assets
+    label: Virtual-asset broker-dealer
+    keywords: [crypto broker, otc crypto, crypto desk, broker-dealer]
+  - code: VA.CUSTODY
+    group: virtual_assets
+    label: Custody or wallet services
+    keywords: [custody, cold storage, wallet service, safekeeping]
+  - code: VA.YIELD
+    group: virtual_assets
+    label: Staking, lending or "earn" products
+    keywords: [staking, stake, yield farming, crypto lending, earn program, apy, usdt staking, liquidity mining]
+  - code: VA.ADVISORY
+    group: virtual_assets
+    label: Virtual-asset advice
+    keywords: [crypto signals, crypto advice, token picks]
+  - code: VA.MGMT
+    group: virtual_assets
+    label: Virtual-asset portfolio management
+    keywords: [crypto fund, managed crypto portfolio, crypto portfolio management]
+  - code: VA.ISSUANCE
+    group: virtual_assets
+    label: Token issuance
+    keywords: [token sale, ico, presale, token launch, ido]
+  - code: VA.TRANSFER
+    group: virtual_assets
+    label: Transfer and settlement
+    keywords: [crypto transfer, crypto remittance]
+  - code: SEC.BROKERAGE
+    group: capital_markets
+    label: Securities dealing or brokerage
+    keywords: [stock trading, share trading, buy shares, equities, securities brokerage]
+  - code: DER.FX_CFD
+    group: capital_markets
+    label: OTC derivatives, spot FX, CFDs
+    keywords: [forex, fx trading, cfd, cfds, leverage, gold trading account, currency trading, derivatives, metatrader, mt4, mt5]
+  - code: SEC.ADVICE
+    group: capital_markets
+    label: Investment advice or financial consultation
+    keywords: [investment advice, financial consultation, portfolio advice, investment advisor, trading signals]
+  - code: SEC.PROMOTION
+    group: capital_markets
+    label: Introduction or promotion
+    keywords: [introducing broker, referral, promotion, affiliate]
+  - code: FUND.MGMT
+    group: capital_markets
+    label: Fund or portfolio management
+    keywords: [fund management, managed account, portfolio management, investment fund, hedge fund]
+  - code: COMMODITY
+    group: capital_markets
+    label: Gold or commodity contracts
+    keywords: [commodities, gold contract, oil contract, bullion]
+  - code: BANK.DEPOSIT
+    group: banking_payments
+    label: Deposit-taking or high-yield deposits
+    keywords: [fixed deposit, high-yield deposit, savings account, deposit scheme]
+  - code: LOAN.CREDIT
+    group: banking_payments
+    label: Personal or business loans
+    keywords: [personal loan, business loan, instant loan, credit facility, low interest loan]
+  - code: PAY.SERVICES
+    group: banking_payments
+    label: Payments, remittances or e-wallets
+    keywords: [remittance, money transfer, e-wallet, payment service, stored value]
+  - code: OTHER
+    group: other
+    label: Unclear or not financial
+    keywords: []

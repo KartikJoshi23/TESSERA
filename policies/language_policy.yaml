@@ -1,0 +1,56 @@
+# Output language rules (implementation-plan.md §4.6 and §12.2).
+# Enforced by tessera.governance.language and Verifier gate G5.
+version: 1
+
+result_strings:
+  CONSISTENT: Consistent with the official record
+  CONFLICTS: Conflicts with the official record
+  UNVERIFIED: Could not verify
+
+disclaimer: >-
+  This result compares the details in a synthetic offer with official register and alert
+  records as of the dates shown. It is not a finding about any firm or person, and it is not
+  legal or investment advice. UAE authorities advise checking directly with the relevant
+  regulator before sending money.
+
+# Regular expressions, matched case-insensitively. Verdict terms are banned as conclusions;
+# facts must be attributed and dated instead ("listed among VARA's unlicensed VASPs on …").
+banned_terms:
+  - pattern: '\bscam\w*'
+    category: verdict
+  - pattern: '\bfraud\w*'
+    category: verdict
+  - pattern: '\bfake\w*'
+    category: verdict
+  - pattern: '\bclon(?:e|es|ed|ing)\b'
+    category: verdict
+  - pattern: '\billegal\w*'
+    category: verdict
+  - pattern: '\bcriminal\w*'
+    category: verdict
+  - pattern: '\b(?:il)?legitimate\b'
+    category: verdict
+    note: Say "official" (for example "the official website on the register") instead.
+  - pattern: '\btrustworthy\b'
+    category: verdict
+  - pattern: '\bis\s+safe\b'
+    category: verdict
+  - pattern: '\bsafe\s+to\s+(?:invest|send|pay|use)\b'
+    category: advice
+  - pattern: '\byou\s+should\s+(?:not\s+)?invest\b'
+    category: advice
+  - pattern: '\b(?:do\s+not|don''t)\s+invest\b'
+    category: advice
+  - pattern: '\bwe\s+recommend\b'
+    category: advice
+  - pattern: '\brecommend(?:s|ed)?\s+(?:that\s+you\s+)?invest\w*'
+    category: advice
+  - pattern: '\bguarantee(?:d|s)?\b'
+    category: advice
+  - pattern: '\brisk[-\s]free\b'
+    category: advice
+
+# Proper nouns that contain a banned word but are allowed when quoted as names.
+allowed_phrases:
+  - Anti-Fraud Center
+  - Anti-Fraud Centre

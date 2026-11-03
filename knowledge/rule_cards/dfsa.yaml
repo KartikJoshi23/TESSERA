@@ -1,0 +1,26 @@
+# DFSA scope rules, in our own words. DFSA sources are cited by homepage only.
+version: 1
+rules:
+  - id: SCOPE-DFSA-01
+    regulator: DFSA
+    statement: >-
+      A DFSA authorisation lists the financial services a firm may carry on; services not listed
+      are not authorised.
+    applies_when: [regulator:DFSA, register_status:authorised]
+    effect: licence_scope:covered only for listed financial services
+    status: needs_verification
+    sources:
+      - title: DFSA Public Register fields (to be confirmed when hand-recording)
+        url: https://www.dfsa.ae/
+    last_reviewed: 2026-11-03
+
+  - id: SCOPE-DFSA-02
+    regulator: DFSA
+    statement: Serving retail clients requires a retail endorsement on the DFSA authorisation.
+    applies_when: [regulator:DFSA, targets_retail:true]
+    effect: licence_scope:not_covered without a retail endorsement (optional rule)
+    status: needs_verification
+    sources:
+      - title: DFSA (to cite)
+        url: https://www.dfsa.ae/
+    last_reviewed: 2026-11-03
