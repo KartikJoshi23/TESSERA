@@ -28,6 +28,7 @@ class CloneCheckAgent(Agent):
         return (
             "_shared",
             "clone_check",
+            "_contact_guide",
             "_conversation",
             render_rule_cards(self.rule_card_text(env, "CLONE-")),
         )
@@ -71,8 +72,13 @@ class CloneCheckAgent(Agent):
                 round=r,
             )
             posted.append(finding.finding_id)
-        if output.payment is not None:
-            payment = output.payment
+        payment = output.payment
+        says_something = payment is not None and (
+            payment.beneficiary_matches is not None
+            or payment.wallet_requested
+            or payment.iban_country
+        )
+        if payment is not None and says_something:
             finding = board.post_finding(
                 self.agent_id,
                 PaymentAssessment(

@@ -16,6 +16,7 @@ from tessera.agents.base import Agent, AgentEnv, Task, send_outgoing
 from tessera.agents.schemas import (
     ReconcilerRoundOutput,
     ReconcilerSynthesisOutput,
+    RelevantRegulatorItem,
     ResolutionItem,
 )
 from tessera.blackboard.views import reconciler_view
@@ -41,10 +42,14 @@ class ReconcilerAgent(Agent):
         return replace(super().spec(env, task), output_model=model)
 
     def prompt_parts(self, env: AgentEnv, task: Task) -> tuple[str, ...]:
-        role = "reconciler_round" if task.kind in _ROUND_TASKS else "reconciler_synthesis"
+        roles = (
+            ("reconciler_round",)
+            if task.kind in _ROUND_TASKS
+            else ("reconciler_synthesis", "_decision_guide")
+        )
         return (
             "_shared",
-            role,
+            *roles,
             render_rule_cards(env.rule_cards.values()),
             render_decision_policy(env.decision),
         )
@@ -89,11 +94,6 @@ class ReconcilerAgent(Agent):
             problems.append("CONFLICTS needs at least one hard conflict")
         if output.result is ResultCode.UNVERIFIED and not output.unverified_reasons:
             problems.append("UNVERIFIED needs at least one reason")
-        problems += [
-            f"unknown finding {claim.finding_id!r}"
-            for claim in output.claims
-            if claim.finding_id not in env.board.findings
-        ]
         if not output.explanation.strip():
             problems.append("explanation is required")
         return problems
@@ -131,6 +131,29 @@ class ReconcilerAgent(Agent):
         env.board.post_proposal(self._proposal(env, task, output))
         return []
 
+    def _coverage(
+        self, env: AgentEnv, output: ReconcilerSynthesisOutput
+    ) -> tuple[RegulatorCoverage, ...]:
+        """What was and was not checked. This is known here, so it does not rest on a model."""
+        listed = {item.regulator: item for item in output.relevant_regulators}
+        opinions = {
+            f.assertion.regulator: f.assertion.status
+            for f in env.board.live_findings("relevance")
+            if f.assertion.status in ("primary", "possible")
+        }
+        for regulator, status in opinions.items():
+            if regulator not in listed:
+                listed[regulator] = RelevantRegulatorItem(regulator=regulator, status=status)
+        return tuple(
+            RegulatorCoverage(
+                regulator=item.regulator,
+                relevance=item.status,
+                checked=self._was_checked(env, item.regulator),
+                rationale=clip_words(item.rationale),
+            )
+            for item in listed.values()
+        )
+
     @staticmethod
     def _was_checked(env: AgentEnv, regulator: str) -> bool:
         """True only if the regulator is covered and its check really ran."""
@@ -148,7 +171,11 @@ class ReconcilerAgent(Agent):
         board = env.board
         claims = []
         for item in output.claims:
-            finding = board.findings[item.finding_id]
+            finding = board.findings.get(item.finding_id)
+            if finding is None:
+                # A slip in one claim should not lose the case. The gates check what remains.
+                board.log_rejection("claim_on_unknown_finding", item.finding_id, self.agent_id)
+                continue
             if not finding.is_live:
                 board.log_rejection("claim_on_dead_finding", item.finding_id, self.agent_id)
                 continue
@@ -170,15 +197,7 @@ class ReconcilerAgent(Agent):
             hard_conflicts=tuple(output.hard_conflicts),
             unverified_reasons=tuple(output.unverified_reasons),
             claims=tuple(claims),
-            regulators=tuple(
-                RegulatorCoverage(
-                    regulator=item.regulator,
-                    relevance=item.status,
-                    checked=self._was_checked(env, item.regulator),
-                    rationale=clip_words(item.rationale),
-                )
-                for item in output.relevant_regulators
-            ),
+            regulators=self._coverage(env, output),
             explanation=output.explanation.strip(),
             round=task.round,
         )

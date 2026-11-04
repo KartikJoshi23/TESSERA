@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import Any
 
 from tessera.agents.base import Agent, AgentEnv, Task
-from tessera.agents.schemas import RegulatorOutput
+from tessera.agents.schemas import RegisterItem, RegulatorOutput
+from tessera.blackboard.board import Blackboard
 from tessera.blackboard.views import regulator_view
 from tessera.llm.prompts import render_activities, render_rule_cards
 from tessera.protocol.claims import (
@@ -23,6 +24,7 @@ from tessera.protocol.claims import (
 )
 from tessera.protocol.common import AgentId, Regulator, clip_words
 from tessera.protocol.evidence import REGISTER_SOURCES
+from tessera.tools.matching import MATCH_RANK
 
 
 class RegulatorAgent(Agent):
@@ -46,6 +48,7 @@ class RegulatorAgent(Agent):
         return (
             "_shared",
             "regulator",
+            "_regulator_guide",
             self.prompt,
             "_conversation",
             render_rule_cards(self.rule_card_text(env, "JUR-", self.scope_prefix, "CLONE-")),
@@ -100,7 +103,7 @@ class RegulatorAgent(Agent):
                 env.rule_evidence(own.rule_ids),
                 own.rationale,
             )
-        for item in output.register_matches:
+        for item in self._one_match_per_entry(board, output.register_matches):
             match_id = post(
                 RegisterMatch(
                     regulator=self.regulator,
@@ -127,6 +130,8 @@ class RegulatorAgent(Agent):
             if record is None or record.source_id in REGISTER_SOURCES:
                 post(RegisterNoMatch(regulator=self.regulator), [evidence_id])
         for scope in output.scope:
+            if scope.entity_evidence_id is None:
+                continue
             rule_ids = [scope.rule_id] if scope.rule_id else []
             post(
                 LicenceScope(
@@ -146,7 +151,8 @@ class RegulatorAgent(Agent):
                     source_id=record.source_id if record else "unknown",
                     alert_evidence_id=alert.evidence_id,
                     about=alert.about,
-                    matched_on=alert.matched_on,
+                    matched_on=alert.matched_on
+                    or (str(record.fields.get("matched_on", "")) if record else ""),
                 ),
                 [alert.evidence_id],
                 alert.rationale,
@@ -161,6 +167,18 @@ class RegulatorAgent(Agent):
             )
         self.handle_conversation(env, task, output)
         return posted
+
+    @staticmethod
+    def _one_match_per_entry(board: Blackboard, items: list[RegisterItem]) -> list[RegisterItem]:
+        """One finding per register entry. Each lookup route mints evidence of its own."""
+        best: dict[tuple[str, str], RegisterItem] = {}
+        for item in items:
+            record = board.evidence.get(item.evidence_id)
+            key = (record.source_id, record.locator) if record else ("", item.evidence_id)
+            current = best.get(key)
+            if current is None or MATCH_RANK[item.match_type] < MATCH_RANK[current.match_type]:
+                best[key] = item
+        return list(best.values())
 
     def _records_consulted(self, env: AgentEnv) -> bool:
         """Deterministic: did every source of this regulator actually produce evidence?

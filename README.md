@@ -34,8 +34,8 @@ The full design is in [implementation-plan.md](implementation-plan.md).
 | 1 | Governance, data layer, deterministic tools | ✅ Done |
 | 2 | Protocol, blackboard, LLM runner, the seven agents | ✅ Done |
 | 3 | Crew orchestration, reconciliation, Verifier, streaming API | ✅ Done |
-| 4 | Single-agent baselines and ablations | Next |
-| 5 | Frontend (Orchestration Theater) | Planned |
+| 4 | Single-agent baselines and ablations | ✅ Done |
+| 5 | Frontend (Orchestration Theater) | Next |
 | 6 | Datasets, evaluation harness, pilot | Planned |
 | 7 | Experiments and analysis | Planned |
 | 8 | CBUAE and ADGM FSRA | Planned |
@@ -113,7 +113,9 @@ Then, from `backend/`:
 - `tessera-probe` writes its report to `runs/probe/` as it goes. With no arguments it runs 40
   trials on every candidate in `policies/models.yaml`, one request at a time, which takes a while.
 - `tessera-smoke` works in its own folder under `runs/smoke/` and stops at a request cap (120 by
-  default). Its results say nothing about final performance.
+  default). `--condition` picks the system, for example `CREW-FULL`, `SA-BASE` or `RULES-ONLY`.
+  Its results say nothing about final performance: the set is hand-written and easy, and plain
+  rules alone match 21 of its 25 cases.
 - `tessera-run --text "..." --attest-synthetic` runs your own synthetic text. Real messages are
   never allowed.
 
@@ -130,6 +132,7 @@ Without `--fiction` it uses the data in `data/`.
 | `GET /api/cases/{id}/events` | Every event of a case in order, live or replayed, as Server-Sent Events |
 | `GET /api/cases/{id}/report` | The finished report |
 | `GET /api/cases/{id}` | The full masked case state |
+| `GET /api/cases/{id}/trace` | The whole case with its coordination telemetry, masked |
 
 Interactive documentation is at `/api/docs`.
 

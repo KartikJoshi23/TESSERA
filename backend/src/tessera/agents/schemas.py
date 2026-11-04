@@ -7,9 +7,9 @@ ignored, because they are harmless. Missing or malformed required fields trigger
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from tessera.protocol.claims import AlertAbout, ContactStatus, CoveredValue, LicenceStatusValue
 from tessera.protocol.common import (
@@ -67,14 +67,25 @@ class ActivityItem(_Output):
     confidence: Confidence = "medium"
 
 
+def _or_other(*allowed: str) -> BeforeValidator:
+    """A label outside the list becomes "other". It is not worth failing a turn over."""
+    return BeforeValidator(lambda value: value if value in allowed else "other")
+
+
 class ZoneItem(_Output):
     zone: Zone
-    basis: Literal["address", "name", "domain", "phone", "claim", "other"]
+    basis: Annotated[
+        Literal["address", "name", "domain", "phone", "claim", "other"],
+        _or_other("address", "name", "domain", "phone", "claim"),
+    ]
     quote: str
 
 
 class ClaimItem(_Output):
-    kind: Literal["firm_name", "regulator", "licence_ref", "address", "other"]
+    kind: Annotated[
+        Literal["firm_name", "regulator", "licence_ref", "address", "other"],
+        _or_other("firm_name", "regulator", "licence_ref", "address"),
+    ]
     value: str
     quote: str
 
@@ -112,7 +123,8 @@ class RegisterItem(_Output):
 
 
 class ScopeItem(_Output):
-    entity_evidence_id: str
+    #: A scope judgement needs a matched entry, so one without is ignored.
+    entity_evidence_id: str | None = None
     activity: str
     covered: CoveredValue
     rule_id: str | None = None
@@ -122,7 +134,7 @@ class ScopeItem(_Output):
 class AlertItem(_Output):
     evidence_id: str
     about: AlertAbout
-    matched_on: str
+    matched_on: str = ""
     rationale: str = ""
 
 
@@ -222,3 +234,22 @@ class ContradictionItem(_Output):
 class VerifierOutput(_Output):
     entailment: list[EntailmentItem] = Field(default_factory=list)
     contradictions: list[ContradictionItem] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- single agent
+
+
+class RegulatorSection(RegulatorOutput):
+    regulator: Literal["CMA", "DFSA", "VARA"]
+
+
+class SingleAgentOutput(JurisdictionOutput):
+    """Every job in one object. The fields keep the names the crew's agents use."""
+
+    regulators: list[RegulatorSection] = Field(default_factory=list)
+    contacts: list[ContactItem] = Field(default_factory=list)
+    payment: PaymentItem | None = None
+    result: ResultCode
+    hard_conflicts: list[str] = Field(default_factory=list)
+    unverified_reasons: list[str] = Field(default_factory=list)
+    explanation: str

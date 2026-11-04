@@ -64,7 +64,7 @@ def test_status_says_what_is_loaded_and_covered(client):
     assert status["covered_regulators"] == ["CMA", "DFSA", "VARA"]
     assert {s["source_id"] for s in status["sources"]} >= {"cma_licensed", "dfsa_register"}
     assert all(s["as_of"] == "2026-11-04" for s in status["sources"])
-    assert status["conditions"][0] == "CREW-FULL"
+    assert {"CREW-FULL", "SA-BASE", "RULES-ONLY"} <= set(status["conditions"])
 
 
 def test_examples_are_fictional_and_hold_no_gold(client):
@@ -108,10 +108,24 @@ def test_a_missing_key_is_explained_when_a_case_starts(populated_settings):
         assert client.get("/api/status").json()["model_ready"] is False
 
 
-def test_a_condition_with_no_crew_is_refused_before_a_case_exists(client, service):
-    response = client.post("/api/cases", json={**OFFER, "condition": "SA-BASE"})
-    assert response.status_code == 422 and "not a crew condition" in response.json()["detail"]
-    assert service.stack.store.case_ids() == []
+def test_any_condition_can_be_started(client, service):
+    response = client.post("/api/cases", json={**OFFER, "condition": "RULES-ONLY"})
+    assert response.status_code == 202
+    client.portal.call(service.wait)
+    report = client.get(f"/api/cases/{response.json()['case_id']}/report").json()
+    assert report["condition"] == "RULES-ONLY" and report["wording"]
+
+
+def test_a_case_list_leaves_out_sampled_runs(client, service):
+    offer = OfferInput(text="An offer.", synthetic=True, corpus_item_id="X")
+    service.stack.open_case("real-case", offer)
+    service.stack.open_case("real-case.run1", offer)
+    assert [case["case_id"] for case in client.get("/api/cases").json()] == ["real-case"]
+
+
+def test_an_unknown_condition_is_refused(client):
+    response = client.post("/api/cases", json={**OFFER, "condition": "CREW-MAGIC"})
+    assert response.status_code == 422
 
 
 # ------------------------------------------------------------------- streaming
@@ -153,7 +167,7 @@ def test_a_case_that_crashes_ends_its_stream_and_names_only_the_error_type(
     async def boom(*args, **kwargs):
         raise RuntimeError("a message that could quote a value")
 
-    monkeypatch.setattr("tessera.api.service.run_crew", boom)
+    monkeypatch.setattr("tessera.api.service.run_opened", boom)
     case_id = finished_case(client, service)
     events = events_of(client, case_id)
     assert events[-1]["type"] == "case.aborted"
@@ -182,6 +196,15 @@ def test_a_finished_case_has_a_report_and_a_state(client, service):
     assert listed == [
         {"case_id": case_id, "condition": "CREW-FULL", "result": "UNVERIFIED", "running": False}
     ]
+
+
+def test_a_case_can_be_exported_with_its_telemetry(client, service):
+    case_id = finished_case(client, service)
+    trace = client.get(f"/api/cases/{case_id}/trace").json()
+    assert trace["case_id"] == case_id
+    assert trace["events"][-1]["type"] == "result.finalized"
+    assert "conflicts" in trace["telemetry"] and "spending" in trace["telemetry"]
+    assert client.get("/api/cases/none/trace").status_code == 404
 
 
 def test_a_report_waits_for_the_case_to_finish(client, service):

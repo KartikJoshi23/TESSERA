@@ -19,10 +19,10 @@ from tessera.blackboard.store import EventStore
 from tessera.config.settings import Mode, Settings, load_settings
 from tessera.devdata import FICTION_DATE, install_world, load_smoke_cases
 from tessera.errors import PolicyError, SyntheticInputRejected
+from tessera.experiment import open_condition, run_opened
 from tessera.governance.synthetic_gate import OfferInput
 from tessera.llm.config import load_models_policy
 from tessera.llm.stack import build_live_transport
-from tessera.orchestration.graph import run_crew
 from tessera.protocol.case import SystemCondition
 from tessera.reporting.report import CaseReport, render_report
 
@@ -90,10 +90,9 @@ async def _run(args: argparse.Namespace) -> int:
     stack = build_stack(settings, transport, store, models)
     case_id = f"{args.case or 'text'}-{uuid.uuid4().hex[:8]}"
     try:
-        env = stack.open_case(
-            case_id, offer, condition=SystemCondition(args.condition), model=args.model
-        )
-        final = await run_crew(env, today=today)
+        condition = SystemCondition(args.condition)
+        env = open_condition(stack, case_id, offer, condition=condition, model=args.model)
+        final = await run_opened(stack, env, offer, today=today)
         print_report(render_report(env.board, env.ctx), usage=final.detail)
     except SyntheticInputRejected as exc:
         print(f"tessera-run: {exc}", file=sys.stderr)
@@ -119,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--condition",
         default=SystemCondition.CREW_FULL.value,
-        choices=[c.value for c in SystemCondition if c.value.startswith("CREW")],
+        choices=[c.value for c in SystemCondition],
     )
     parser.add_argument("--model", help="model ID; default: the primary model")
     parser.add_argument("--run-dir", type=Path, help="default: runs/cases")

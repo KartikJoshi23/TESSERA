@@ -25,7 +25,7 @@ from typing import Any
 from tessera.agents.base import AgentEnv
 from tessera.normalize.domains import registrable_domain
 from tessera.orchestration.support import CONTACT_MATCHES, ClaimChecker, matched_on
-from tessera.protocol.claims import Relevance
+from tessera.protocol.claims import DECISIVE_TYPES
 from tessera.protocol.common import ResultCode
 from tessera.protocol.conflicts import ConflictStatus
 from tessera.protocol.contacts import ContactKind, ContactRole
@@ -35,20 +35,7 @@ from tessera.protocol.messages import Performative
 from tessera.tools.matching import match_name
 
 _DOMAIN_KINDS = frozenset({ContactKind.URL, ContactKind.DOMAIN, ContactKind.EMAIL})
-#: Findings the conditions rest on. Their evidence must all be valid for K7 to hold.
-_DECISIVE = frozenset(
-    {
-        "register_match",
-        "register_no_match",
-        "licence_status",
-        "licence_scope",
-        "alert_hit",
-        "contact_assessment",
-        "payment_assessment",
-    }
-)
 _NOT_ACTIVE = frozenset({"ipa", "withdrawn", "suspended"})
-_RELEVANT = frozenset({"primary", "possible"})
 
 
 @dataclass(frozen=True)
@@ -78,17 +65,6 @@ class PolicyDecision:
         }
 
 
-def relevant_regulators(env: AgentEnv) -> set[str]:
-    """The union of supported relevance claims (P5). Any agent's opinion can add a regulator."""
-    relevant: set[str] = set()
-    for finding in env.board.live_findings("relevance"):
-        assertion = finding.assertion
-        assert isinstance(assertion, Relevance)
-        if assertion.status in _RELEVANT:
-            relevant.add(assertion.regulator)
-    return relevant
-
-
 def _regulator_named(claim: str, names: dict[str, tuple[str, ...]]) -> str | None:
     """The regulator a claim names, as whole words, so "regulated by the DFSA" counts."""
     text = " ".join(claim.casefold().split())
@@ -110,7 +86,7 @@ class DecisionEngine:
         self.checker = ClaimChecker(env.board, env.ctx.sources, env.facts_for)
         self.live = env.board.live_findings()
         self.invalid = {f.finding_id for f in self.live if self.checker.problems(f)}
-        self.relevant = relevant_regulators(env)
+        self.relevant = env.board.relevant_regulators()
 
     # ------------------------------------------------------------------ what can be relied on
 
@@ -213,7 +189,7 @@ class DecisionEngine:
             if alert.assertion.about != "impersonation_of_entity":
                 continue
             stated = self.env.facts_for(self._record(alert.assertion.alert_evidence_id)).get(
-                "legitimate_contacts", []
+                "official_contacts_stated", []
             )
             official = {registrable_domain(value.lstrip("@")) for value in stated} - {None}
             if not official:
@@ -259,6 +235,10 @@ class DecisionEngine:
         for scope in self.valid("licence_scope"):
             if scope.assertion.covered == "no":
                 add("HC4", scope)
+        offered = any(f.assertion.type == "activity" for f in self.live)
+        for status in self.valid("licence_status"):
+            if status.assertion.status == "ipa" and offered:
+                add("HC4", status)  # an In-Principle Approval holder may not serve clients
         for payment in self.valid("payment_assessment"):
             if payment.assertion.beneficiary_matches is False:
                 add("HC6", payment)
@@ -376,7 +356,7 @@ class DecisionEngine:
             self._entity_is_competent_and_active(matches) if matches else (False, False)
         )
         uncovered, unchecked = self._gaps()
-        decisive = [f for f in self.live if f.assertion.type in _DECISIVE]
+        decisive = [f for f in self.live if f.assertion.type in DECISIVE_TYPES]
         conditions = {
             "K1": identity,
             "K2": competent,

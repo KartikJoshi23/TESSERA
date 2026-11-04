@@ -21,6 +21,7 @@ ADDRESS = "Gate Village, DIFC, Dubai"
 REASONING = "a distinctive line of agent reasoning"
 
 _ROLES = {
+    "# Your role: Single agent": "SA",  # first, because its prompt also holds the regulator notes
     "# Your role: Jurisdiction agent": "JUR",
     "## Your regulator: CMA": "CMA",
     "## Your regulator: DFSA": "DFSA",

@@ -219,12 +219,22 @@ class Blackboard:
         rationale: str = "",
         round: int = 0,
     ) -> Finding:
-        """Post a finding. Unknown evidence IDs are kept and flagged (conflict type C6)."""
+        """Post a finding. Unknown evidence IDs are kept and flagged (conflict type C6).
+
+        Saying the same thing twice adds nothing, so it returns the finding already there. Models
+        often repeat themselves when answering a message, and each repeat would look like news.
+        """
+        masked = ASSERTION_ADAPTER.validate_python(
+            self.gateway.mask_payload(assertion.model_dump(mode="json"))
+        )
+        for existing in self.live_findings(masked.type):
+            if existing.author is author and existing.assertion == masked:
+                return existing
         prefix = f"F-{_FINDING_PREFIX[author]}"
         finding = Finding(
             finding_id=self._next_id(prefix),
             author=author,
-            assertion=self.gateway.mask_payload(assertion.model_dump(mode="json")),
+            assertion=masked,
             confidence=confidence,
             evidence_ids=tuple(dict.fromkeys(evidence_ids)),
             depends_on=tuple(depends_on),
@@ -240,6 +250,18 @@ class Blackboard:
         if assertion_type is not None:
             found = [f for f in found if f.assertion.type == assertion_type]
         return found
+
+    def supersede_findings(self, author: AgentId, *, round: int = 0) -> None:
+        """Replace everything an author said. A single agent answers a veto by starting again."""
+        self._emit("findings.superseded", author, {"author": str(author), "round": round})
+
+    def relevant_regulators(self) -> set[str]:
+        """The union of relevance opinions (P5). Any agent's opinion can add a regulator."""
+        return {
+            f.assertion.regulator  # type: ignore[union-attr]
+            for f in self.live_findings("relevance")
+            if f.assertion.status in ("primary", "possible")  # type: ignore[union-attr]
+        }
 
     def revise_finding(
         self,
@@ -609,6 +631,12 @@ def _on_settled(board: Blackboard, event: Event) -> None:
     )
 
 
+def _on_superseded(board: Blackboard, event: Event) -> None:
+    for finding in list(board.findings.values()):
+        if finding.author.value == event.payload["author"] and finding.is_live:
+            _set_status(board, finding.finding_id, FindingStatus.SUPERSEDED)
+
+
 def _on_proposal(board: Blackboard, event: Event) -> None:
     board.proposals.append(ProposedResult.model_validate(event.payload))
 
@@ -634,6 +662,7 @@ _APPLIERS: dict[str, Callable[[Blackboard, Event], None]] = {
     "evidence.minted": _on_evidence,
     "finding.posted": _on_finding,
     "finding.revised": _on_revision,
+    "findings.superseded": _on_superseded,
     "message.sent": _on_message,
     "conflict.detected": _on_conflict,
     "conflict.resolved": _on_resolution,

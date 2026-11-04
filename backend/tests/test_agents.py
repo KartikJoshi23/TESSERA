@@ -73,6 +73,33 @@ def test_jurisdiction_posts_typed_findings_with_evidence(harness):
     setup.assert_no_leaks()
 
 
+def test_a_label_outside_the_list_does_not_fail_the_turn(harness):
+    """The live run: this slip cost a repair in most cases, and one whole Jurisdiction turn."""
+    setup = harness(
+        text_of("S09"),
+        json_reply(
+            jurisdiction_output(
+                claims=[{"kind": "website", "value": "x", "quote": "BTC trading"}],
+                zone_signals=[{"zone": "DIFC", "basis": "guess", "quote": "BTC trading"}],
+            )
+        ),
+    )
+    result = setup.turn(AgentId.JUR)
+    assert result.ok and result.repairs == 0
+    assert setup.board.live_findings("offer_claim")[0].assertion.kind == "other"
+    assert setup.board.live_findings("zone_signal")[0].assertion.basis == "other"
+
+
+def test_a_repeated_finding_is_not_news(harness):
+    """The live run: repeats on every reply opened a fresh conflict in each round."""
+    reply = jurisdiction_output(activities=[{"code": "VA.EXCHANGE", "quote": "BTC trading"}])
+    setup = harness(text_of("S09"), json_reply(reply), json_reply(reply))
+    setup.turn(AgentId.JUR)
+    before = dict(setup.board.findings)
+    setup.turn(AgentId.JUR, kind="respond")
+    assert setup.board.findings == before
+
+
 def test_a_quote_that_is_not_in_the_offer_proves_nothing(harness):
     setup = harness(
         text_of("S09"),
@@ -245,6 +272,57 @@ def test_no_matches_and_list_hits_are_findings_too(harness):
     assert board.evidence[no_match.evidence_ids[0]].kind is EvidenceKind.NO_MATCH
     gap = board.live_findings("coverage_gap")[0]
     assert gap.assertion.scope == "field" and gap.author is AgentId.VARA
+
+
+def test_one_entry_found_by_several_routes_is_one_match(harness):
+    def final(payload):
+        by_name, by_domain = tool_results(payload)
+        return json_reply(
+            {
+                "relevance": {"status": "primary"},
+                "register_matches": [
+                    {
+                        "evidence_id": result["matches"][0]["evidence_id"],
+                        "match_type": result["matches"][0]["match_type"],
+                        "status": "active",
+                    }
+                    for result in (by_domain, by_name)
+                ],
+                "scope": [{"activity": "DER.FX_CFD", "covered": "unknown"}],
+                "alerts": [],
+            }
+        )
+
+    setup = harness(
+        text_of("S10"),
+        tool_reply(
+            ("cma_register_lookup", {"name": "Oasis Bridge Financial Consultancy LLC"}),
+            ("cma_register_lookup", {"domain": "oasisbridge.example"}),
+        ),
+        final,
+    )
+    assert setup.turn(AgentId.CMA).repairs == 0
+    assert len(setup.board.live_findings("register_match")) == 1
+    assert setup.board.live_findings("licence_scope") == []  # no entry named, so no judgement
+
+
+def test_an_alert_takes_what_it_matched_on_from_its_evidence(harness):
+    def final(payload):
+        hit = tool_results(payload)[0]["matches"][0]
+        return json_reply(
+            {
+                "relevance": {"status": "primary"},
+                "alerts": [{"evidence_id": hit["evidence_id"], "about": "entity_unauthorised"}],
+            }
+        )
+
+    setup = harness(
+        text_of("S12"),
+        tool_reply(("vara_unlicensed_lookup", {"name": "Mirage Coin Hub"})),
+        final,
+    )
+    assert setup.turn(AgentId.VARA).repairs == 0
+    assert setup.board.live_findings("alert_hit")[0].assertion.matched_on == "name"
 
 
 def test_an_invented_evidence_id_is_kept_and_flagged(harness):
@@ -600,6 +678,16 @@ def test_clone_check_compares_contacts_through_its_tools(harness):
     assert len(finding.evidence_ids) == 2
 
 
+def test_a_payment_item_that_says_nothing_is_not_a_finding(harness):
+    """The live run: an empty payment object opened a conflict that cost extra rounds."""
+    setup = harness(text_of("S20"))
+    setup.transport.extend(
+        json_reply({"contacts": assessments(setup.board), "payment": {"wallet_requested": False}})
+    )
+    setup.turn(AgentId.CLN)
+    assert setup.board.live_findings("payment_assessment") == []
+
+
 def test_payment_details_become_a_finding(harness):
     setup = harness(text_of("S17"))
 
@@ -740,7 +828,6 @@ def test_uncovered_regulators_are_reported_as_not_checked(harness):
         ({"unverified_reasons": []}, "needs at least one reason"),
         ({"result": "CONFLICTS", "hard_conflicts": ["HC9"]}, "unknown hard conflict"),
         ({"unverified_reasons": ["U99"]}, "unknown reason"),
-        ({"claims": [{"finding_id": "F-J99", "text": "x"}]}, "unknown finding"),
         ({"explanation": "  "}, "explanation is required"),
     ],
 )
@@ -767,6 +854,29 @@ def test_a_regulator_whose_check_failed_is_not_reported_as_checked(harness):
     setup.turn(AgentId.REC, kind="synthesis")
     checked = {c.regulator: c.checked for c in setup.board.proposals[-1].regulators}
     assert checked == {"CMA": False, "VARA": True}
+
+
+def test_one_invented_finding_does_not_lose_the_proposal(harness):
+    """The live run: a model named a finding that does not exist, twice, and the case failed."""
+    setup = harness(
+        text_of("S09"), json_reply(synthesis(claims=[{"finding_id": "F-E4", "text": "x"}]))
+    )
+    assert setup.turn(AgentId.REC, kind="synthesis").ok
+    assert setup.board.proposals[-1].claims == ()
+    assert setup.board.rejections[-1]["code"] == "claim_on_unknown_finding"
+
+
+def test_coverage_lists_every_relevant_regulator_even_if_the_model_forgets(harness):
+    """The live run: a sound result was vetoed twice over a regulator it left out."""
+    setup = harness(
+        text_of("S09"),
+        json_reply(jurisdiction_output()),
+        json_reply(synthesis(relevant_regulators=[{"regulator": "DFSA", "status": "primary"}])),
+    )
+    setup.turn(AgentId.JUR)
+    setup.turn(AgentId.REC, kind="synthesis")
+    listed = {c.regulator: c.relevance for c in setup.board.proposals[-1].regulators}
+    assert listed == {"DFSA": "primary", "CMA": "possible", "VARA": "possible"}
 
 
 def test_a_judgement_with_nothing_to_cite_is_not_a_claim(harness):

@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Version** | 2. Audited and revised on 3 November 2026; Appendix E lists every finding and fix. |
-| **Status** | Approved to proceed on 3 Nov 2026. Part 1 (foundations) is delivered. Part 2 (protocol, blackboard, runner, the seven agents) and Part 3 (crew orchestration, Verifier, streaming API) are delivered. Parts 4–8 are pending, and each starts only after your "continue". |
+| **Status** | Approved to proceed on 3 Nov 2026. Part 1 (foundations) is delivered. Parts 2 (protocol, blackboard, runner, the seven agents), 3 (crew orchestration, Verifier, streaming API) and 4 (baselines) are delivered. Parts 5–8 are pending, and each starts only after your "continue". |
 | **Budget** | **$0.** Every model, service and tool is free (§1.4). |
 | **Repository** | <https://github.com/KartikJoshi23/TESSERA> (public). Real data and `PS.md` never leave this machine (§12.7). |
 | **Problem** | `PS.md`, Problem 1 (finalized). Problem 2, the Part B audit logs and the dropped candidates are used only where they constrain Problem 1. |
@@ -859,7 +859,9 @@ This is an engineering reading of PS.md's guidance, not legal advice. The design
 
 **Prompt tuning budget:** the crew and the single agent each get the **same** number of tuning iterations on the development split. Revisions are logged, the budget is capped (5 per system), and prompts are frozen before any test run.
 
-**What differs:** only the orchestration, meaning one agent versus a crew.
+**What differs:** only the orchestration, meaning one agent versus a crew. Each case records everything it ran with, and `tests/test_fairness.py` compares those records, so an unplanned difference fails a test. The one setting all single-agent conditions change is the tool-call allowance: one agent doing every job gets 32 calls in a turn, and a crew agent gets 8.
+
+**Equal knowledge in practice:** the guidance on relevance, list hits, contacts and choosing a result lives in shared files that both systems load, and a test checks that the words are the same. Prompt revisions are logged in `backend/prompts/CHANGELOG.md`.
 
 **Compute:** the primary comparison reports requests and tokens but does not force them to be equal. The compute-matched conditions do force it.
 
@@ -870,7 +872,7 @@ This is an engineering reading of PS.md's guidance, not legal advice. The design
 | **RULES-ONLY** | No LLM: keyword activity rules, lookups, decision policy | Reference floor, and a probe of dataset difficulty (§11.2 D) |
 | **SA-BASE** | One agent, all tools, all rule cards, temperature 0, default reasoning setting | **The mandatory baseline** |
 | **SA-VER** | SA-BASE plus the same Verifier and one remediation cycle | The value of verification on its own |
-| **SA-SC5** | Majority vote over 5 SA-BASE runs at temperature 0.7 | A control for extra compute via voting |
+| **SA-SC5** | Majority vote over 5 SA-BASE runs at temperature 0.7. A tie goes to the more cautious result | A control for extra compute via voting |
 | **SA-MAX** | SA-BASE at the model's highest reasoning setting, with a tool-call allowance matched to the crew's median output tokens | A control for extra compute via more thinking |
 | SA-LARGER *(optional)* | SA-BASE on the largest tool-capable free model | A bigger single model instead of a crew |
 | **CREW-SILO** | Agents work independently with no messages; Reconciler synthesis; Verifier on | Baseline for measuring sharing |
@@ -989,7 +991,7 @@ The target is about 280–360 items, split 30% development and 70% test, stratif
 - **Gold fields are stripped** before a case is created (a tested invariant).
 - **The development split is used for threshold calibration only.**
 - **Entity-level circularity:** these items come from the same snapshots the tools search. This is intended: the evaluation measures retrieval and reasoning, not whether the data is true. The hard positives and negatives (E11) and the component metrics show where errors come from.
-- **Difficulty probe:** RULES-ONLY runs on the development split first. If it scores very high there, the synthetic messages are too formulaic, and they are made harder before the test set is frozen.
+- **Difficulty probe:** RULES-ONLY runs on the development split first. If it scores very high there, the synthetic messages are too formulaic, and they are made harder before the test set is frozen. The probe already fired on the hand-written smoke set: RULES-ONLY matched 21 of 25 with no model, so that set tests the plumbing and shows nothing about what a model adds. Test messages must avoid exact firm names and tidy phrasing, and must hide facts in the wording, or the comparison will not separate the systems.
 
 ### 11.3 Metrics
 
@@ -1287,7 +1289,8 @@ MultiAgent-Orchestration/              (local folder; GitHub: KartikJoshi23/TESS
 │   │   │                              crew graph, ablation switches, case runner
 │   │   ├── reporting/                 final result and the report (output contract)
 │   │   ├── api/                       FastAPI app, SSE stream, case service
-│   │   ├── baseline/                  (Part 4)
+│   │   ├── baseline/                  RULES-ONLY and the single-agent conditions
+│   │   ├── experiment.py              opens and runs any condition the same way
 │   └── tests/                         unit and governance tests; fictional fixtures only
 ├── eval/
 │   ├── smoke/                         fictional world and 25-case smoke set (committed)
@@ -1429,7 +1432,7 @@ Each part ends with a short report covering what was built, tests run, open issu
 | **1. Foundations: governance, data layer, tools** ✅ | Repository scaffold; settings and modes; `policies/*.yaml` and their guards (network guard, link sanitiser, mode gate, synthetic-input gate, language linter, restricted-value masking); commit guard, pre-commit hook and CI; manual-ingest command with manifests and snapshots; hand-record templates and validators; all deterministic tools; seed rule cards with citations and verification status; docs (data governance, DFSA permission draft, annotation guidelines v0, ADRs) | All tools unit-tested on fictional fixtures; governance tests pass (regulator domains blocked; DFSA links cleaned; zero DFSA values in demo mode; masking invariant; guard blocks restricted paths, keys and DFSA deep links) | **You:** read the DFSA disclaimer; CMA "Export To Excel"; VARA transcription; DFSA hand-recording (2026 alerts and register facts for evaluation firms); CMA warnings hand-record; optionally send the DFSA letter | L |
 | **2. Protocol, blackboard, runner, the seven agents** ✅ | Pydantic schemas (findings, messages, claim catalogue); event-sourced blackboard (SQLite); per-agent views; `LLMClient` (OpenAI-compatible, rate limiter, retries, replay cache); masking wired into every request; **model probe** and ADR; `AgentRunner` (tool loop, JSON validation and repair, usage, failures); prompt v1 for all roles; a 25-case hand-written synthetic smoke set | Each agent passes fixture tests with recorded responses; live smoke runs within a request cap; invariants: evidence IDs must exist, gold fields absent, no restricted value in any outgoing request | **You:** create one NVIDIA API key and put it in `.env` (I'll ask at the start of Part 2); verify rule cards against primary sources | L |
 | **3. Crew orchestration, reconciliation, Verifier, streaming API** ✅ | LangGraph crew graph; round scheduler and mailboxes; conflict detector C1–C7; Reconciler protocol; Verifier gates G1–G8 and veto loop; decision-policy engine; report renderer and linter; FastAPI and SSE; command-line case runner; ablation switches | The worked example (§6.10) and 5 more scripted cases give the expected traces; property tests: cases always finish, a veto never upgrades a result, protocol rules are enforced | Annotation of entity-level gold labels begins | L |
-| **4. Baselines** | RULES-ONLY, SA-BASE, SA-VER, SA-SC5, SA-MAX (optional SA-LARGER), on the shared runner; fairness-contract checks; comparable logging | Config-diff test shows that only orchestration differs; all conditions run on the smoke set | Human-written synthetic messages | M |
+| **4. Baselines** ✅ | RULES-ONLY, SA-BASE, SA-VER, SA-SC5, SA-MAX (optional SA-LARGER), on the shared runner; fairness-contract checks; comparable logging | Config-diff test shows that only orchestration differs; all conditions run on the smoke set | Human-written synthetic messages | M |
 | **5. Frontend** | Design system; Intake; Orchestration Theater (live and replay); Result Dossier; Arena; Evaluation Lab (using fixtures until Part 6); Data & Governance | Playwright end-to-end tests; reducer replay tests; accessibility checks; demo mode verified clean of DFSA values | Review of the visual design | L |
 | **6. Datasets and evaluation harness, plus pilot** | Entity-level gold builder; synthetic generator, validators and review workflow; splits; rate-limited, resumable harness; metrics; statistics; RULES-ONLY difficulty probe; **pilot** (20 items × the full run plan, about 4.4K requests); measured requests and timing; **pre-registration frozen** | Annotation κ ≥ 0.8 (or the single-annotator fallback); pilot runs end to end | Annotation and adjudication; final freeze of snapshots | L |
 | **7. Experiments, analysis, paper artefacts** | Full runs (about 95K requests, about 45 hours in resumable overnight chunks); analysis notebooks; figures and tables; MAST failure analysis; draft write-up skeleton; release checklist | All pre-registered analyses reported, including null results | Review of results | M |
@@ -1749,4 +1752,13 @@ Each change keeps to the approved design, or moves it for the reason given.
 | F20 | 3 | A correctness review of Parts 1–3 found and fixed ten defects. Rationales clipped to 60 words were rejected as too long, so resolutions could be lost. A CMA status of "Inactive" was read as active. DFSA alerts found only by a near name were recorded as exact matches. A listed email domain did not count as a listed contact. A look-alike comparison added HC5 even to a matching contact. One consulted list counted as checking a whole regulator. A plain answer could close a challenge. A report could say "checked" for a failed check. HC5's policy text used a banned word. A claimed regulator outside coverage could still end as Consistent | Several of these pushed results the wrong way, so each has a test. A check for the last one now reports U2 |
 | F21 | 3 | A finding with nothing to cite, such as `targeting`, is no longer a claim in a proposal. Coverage is reported separately | The first live run reached the right answer, then the Verifier vetoed it, rightly calling an uncited judgement unsupported |
 | F22 | 3 | `max_tokens` rose from 8,192 to 16,384 | In the first live run, reasoning used the whole allowance and left no answer |
+| F23 | 3 | Harmless slips in a model's output no longer cost a repair or a turn. An unknown label becomes `other`, a scope judgement with no entry is ignored, a repeated finding is not posted twice, one entry found by several routes is one match, and a claim on an unknown finding is dropped | The first full live run spent most of its repairs on these, and lost two cases to them |
+| F24 | 3 | The list of regulators in a proposal is completed in code | It is known from the findings, and a sound result had been vetoed twice over one regulator a model left out |
+| F25 | 3 | An In-Principle Approval never counts as covering an activity, whatever a model says, and an IPA holder offering an activity gives HC4 | SCOPE-VARA-01 is a fixed rule, so it need not depend on a model's judgement |
+| F26 | 3 | With the Verifier on, a report states every hard conflict and reason the decision-policy engine derives, not the ones the proposal happened to list | They are deterministic and checkable. A proposal needs only one backed hard conflict to pass |
+| F27 | 4 | RULES-ONLY's crew works from a reading of the offer, and the tests give it a perfect reading | The same code answers two questions: how far plain rules get, and whether the policy reaches gold when an offer is read correctly |
+| F28 | 4 | The single agent returns one object, posted through the same code as the crew's findings, and answers a veto by replacing all its findings | It has no challenge rounds, so it needs another way to correct itself. Its findings are the same types, so the same gates apply |
+| F29 | 4 | SA-MAX can only differ from SA-BASE by thinking and output length | The model's only reasoning control found so far is on or off. If primary runs use thinking on, SA-MAX differs only in its longer outputs |
+| F30 | 4 | A second review fixed: the DFSA tool never returned its no-match evidence ID, so an agent could not report that a firm is not on the DFSA register; our field names used a word the language policy bans; the shared ground rules told one agent working alone that it was "one member"; retries stopped too soon for a slow spell at the provider | Found by reading live traces. The first explains a hard conflict that was missing from a live case |
+| F31 | 4 | Added the trace bundle and coordination telemetry that §6.11 calls for, served at `/api/cases/{id}/trace` | The evaluation and the frontend both need them |
 

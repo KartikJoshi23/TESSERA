@@ -150,16 +150,14 @@ def compose_final(
 def _stated_conflicts(
     proposal: ProposedResult, decision: PolicyDecision, *, verifier_on: bool
 ) -> tuple[str, ...]:
-    """Gate G4 needs one backed hard conflict, so a proposal can list others that are not.
+    """Every hard conflict the evidence backs, and no other.
 
-    A report states only the backed ones. With the Verifier off nothing checks them, which is the
-    point of that ablation.
+    Gate G4 needs only one to hold, so a proposal can miss some or add others. With the Verifier
+    off nothing checks them, which is the point of that ablation.
     """
     if proposal.result is not ResultCode.CONFLICTS:
         return ()
-    if not verifier_on:
-        return proposal.hard_conflicts
-    return tuple(c for c in proposal.hard_conflicts if c in decision.hard_conflict_ids)
+    return decision.hard_conflict_ids if verifier_on else proposal.hard_conflicts
 
 
 def _final_from_proposal(
@@ -175,11 +173,10 @@ def _final_from_proposal(
     if fixed:
         env.board.record("verifier.autofix", AgentId.ORC, {"gate": "G6", "links": fixed})
     # The linter runs on every result, even when the Verifier is switched off for an ablation.
-    reasons = tuple(
-        dict.fromkeys((*proposal.unverified_reasons, *decision.unverified_reasons))
-        if code is ResultCode.UNVERIFIED
-        else ()
-    )
+    reasons: tuple[str, ...] = ()
+    if code is ResultCode.UNVERIFIED:
+        derived = decision.unverified_reasons if verifier_on else ()
+        reasons = derived or proposal.unverified_reasons
     if _usable_explanation(proposal, env.language):
         explanation = clean_links(proposal.explanation)
     else:

@@ -142,9 +142,9 @@ class ClaimChecker:
 
     def _is_stated_official(self, record: EvidenceRecord, point: ContactPoint) -> bool:
         """True if a regulator's own record states this contact point as official."""
-        if record.kind not in LIST_KINDS or "contact_legitimate" not in matched_on(record):
+        if record.kind not in LIST_KINDS or "contact_stated_official" not in matched_on(record):
             return False
-        stated = self.facts_for(record).get("legitimate_contacts", [])
+        stated = self.facts_for(record).get("official_contacts_stated", [])
         real = self.board.gateway.unmask(point.normalized)
         domain = registrable_domain(real)
         return bool(domain) and domain in {registrable_domain(v.lstrip("@")) for v in stated}
@@ -196,6 +196,8 @@ class ClaimChecker:
             if a.rule_id not in rules:
                 problems.append("a scope conclusion must cite its rule card")
         facts = self.facts_for(record)
+        if a.covered == "yes" and official_status(record, facts) == "ipa":
+            problems.append("an In-Principle Approval covers no activity yet")
         if "covers_activities" in facts:
             if a.activity in facts["covers_activities"]:
                 shown = "yes"

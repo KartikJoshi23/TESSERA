@@ -15,6 +15,7 @@ from tessera.agents.schemas import (
     ReconcilerRoundOutput,
     ReconcilerSynthesisOutput,
     RegulatorOutput,
+    SingleAgentOutput,
     VerifierOutput,
 )
 from tessera.agents.smoke import main as smoke_main
@@ -40,6 +41,7 @@ OUTPUT_MODELS: dict[str, type[BaseModel]] = {
     "reconciler_round": ReconcilerRoundOutput,
     "reconciler_synthesis": ReconcilerSynthesisOutput,
     "verifier": VerifierOutput,
+    "single_agent": SingleAgentOutput,
 }
 ALL_PROMPTS = sorted(path.stem for path in PROMPTS.glob("*.md"))
 CASES = load_smoke_cases(REPO_ROOT)
@@ -237,6 +239,15 @@ def test_smoke_stops_at_its_request_cap(monkeypatch, tmp_path, capsys):
     args = ["--limit", "3", "--max-requests", "1", "--run-dir", str(tmp_path), "--no-cache"]
     assert smoke_main(args) == 0
     assert "request cap reached after 1 case(s)" in capsys.readouterr().out
+
+
+def test_smoke_can_run_a_condition_with_no_model(monkeypatch, tmp_path, capsys):
+    transport, _, _ = stub_stack(monkeypatch, [])
+    code = smoke_main(
+        ["--cases", "S15", "--condition", "RULES-ONLY", "--run-dir", str(tmp_path), "--no-cache"]
+    )
+    assert code == 0 and transport.payloads == []
+    assert "S15" in capsys.readouterr().out
 
 
 def test_smoke_explains_a_missing_key(monkeypatch, tmp_path, capsys):

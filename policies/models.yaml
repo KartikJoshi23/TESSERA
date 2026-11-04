@@ -11,9 +11,9 @@ provider:
 rate_limit:
   requests_per_minute: 35
   max_concurrent: 4
-  max_attempts: 6
+  max_attempts: 8
   base_backoff_seconds: 2
-  max_backoff_seconds: 90
+  max_backoff_seconds: 120
   request_timeout_seconds: 240
 
 # Primary runs. Stability and self-consistency runs override the temperature (§11.4).
@@ -24,6 +24,7 @@ decoding:
 
 limits:
   tool_calls_per_turn: 8
+  single_agent_tool_calls: 32
   repair_attempts: 1
   requests_per_case: 80
 

@@ -153,6 +153,18 @@ def test_a_look_alike_of_another_official_domain_is_not_a_conflict(harness):
     assert decide(setup).hard_conflicts == ()
 
 
+def test_an_ipa_entry_covers_nothing_whatever_a_model_says(harness):
+    setup = oracle_case(harness, "S11")
+    scope = setup.board.live_findings("licence_scope")[0]
+    called_covered = scope.model_copy(
+        update={"assertion": scope.assertion.model_copy(update={"covered": "yes"})}
+    )
+    setup.board.findings[scope.finding_id] = called_covered
+    checker = ClaimChecker(setup.board, setup.env.ctx.sources, setup.env.facts_for)
+    assert "covers no activity" in checker.problems(called_covered)[0]
+    assert "HC4" in decide(setup).hard_conflict_ids  # the status alone is enough
+
+
 def test_a_claimed_regulator_outside_coverage_rules_out_consistent(harness):
     setup = oracle_case(harness, "S01")
     words = setup.env.quote_evidence("Falcon Ridge")

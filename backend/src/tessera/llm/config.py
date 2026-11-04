@@ -41,6 +41,8 @@ class DecodingConfig(_Frozen):
 
 
 class LimitsConfig(_Frozen):
+    #: One agent doing every job, with no more calls than a crew's agents have between them.
+    single_agent_tool_calls: int = 32
     tool_calls_per_turn: int = Field(ge=0)
     repair_attempts: int = Field(ge=0)
     requests_per_case: int = Field(ge=1)
@@ -70,6 +72,17 @@ class ModelsPolicy(_Frozen):
     def options_for(self, model: str) -> dict[str, Any]:
         options = self.model_options.get(model)
         return dict(options.extra_body) if options else {}
+
+    def limits_for(self, condition: str) -> LimitsConfig:
+        """One agent doing every job needs the tool calls that several agents share."""
+        if not condition.startswith("SA-"):
+            return self.limits
+        allowance = self.limits.single_agent_tool_calls
+        return self.limits.model_copy(update={"tool_calls_per_turn": allowance})
+
+    def with_decoding(self, **changes: Any) -> ModelsPolicy:
+        """A copy with decoding settings changed, for a condition that tests them."""
+        return self.model_copy(update={"decoding": self.decoding.model_copy(update=changes)})
 
     def with_thinking(self, enabled: bool) -> ModelsPolicy:
         """A copy with the primary model's reasoning switched on or off, for comparisons."""

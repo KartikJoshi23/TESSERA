@@ -15,7 +15,7 @@ Judge only from the evidence listed. A sentence that sounds reasonable is not su
 
 Read ALL the evidence in the case, not only what the claims cite. In `contradictions`, list every record that conflicts with the proposed result, or that the proposal should have used but ignored. For example, an alert hit on one of the offer's contact points contradicts a proposed "consistent" result.
 
-If nothing contradicts the proposal, return an empty list.
+A record that fits the proposed result is not a contradiction, even if it is not cited. An alert naming a firm as the victim of impersonation does not contradict a proposal when the offer's own contact points match the official record. For a "Could not verify" result, list a record only if it shows a hard conflict the proposal missed. If nothing contradicts the proposal, return an empty list.
 
 ## Output shape
 
@@ -25,7 +25,7 @@ If nothing contradicts the proposal, return an empty list.
     {"claim_index": 0, "verdict": "supported", "rationale": "The alert record names this domain."}
   ],
   "contradictions": [
-    {"evidence_id": "E-0123456789abcdef", "claim_index": null, "rationale": "This list entry names a contact point used in the offer."}
+    {"evidence_id": "<evidence ID>", "claim_index": null, "rationale": "This list entry names a contact point used in the offer."}
   ]
 }
 ```

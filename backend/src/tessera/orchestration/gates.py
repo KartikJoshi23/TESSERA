@@ -10,7 +10,7 @@ from tessera.agents.base import AgentEnv
 from tessera.governance.language import lint_text
 from tessera.governance.links import DFSA_DEEP_LINK, DFSA_HOMEPAGE, find_dfsa_deep_links
 from tessera.governance.policies import LanguagePolicy
-from tessera.orchestration.decision import PolicyDecision, relevant_regulators
+from tessera.orchestration.decision import PolicyDecision
 from tessera.orchestration.support import ClaimChecker
 from tessera.protocol.claims import needs_evidence
 from tessera.protocol.common import ResultCode
@@ -101,7 +101,7 @@ def _coverage(env: AgentEnv, proposal: ProposedResult) -> GateResult:
     listed = {coverage.regulator: coverage for coverage in proposal.regulators}
     problems = [
         f"{regulator} is relevant but not disclosed"
-        for regulator in sorted(relevant_regulators(env) - set(listed))
+        for regulator in sorted(env.board.relevant_regulators() - set(listed))
     ]
     return _gate("G7", problems)
 

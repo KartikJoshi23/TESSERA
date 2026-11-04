@@ -19,15 +19,14 @@ from langgraph.graph import END, START, StateGraph
 
 from tessera.agents.base import Agent, AgentEnv, Task
 from tessera.agents.crew import build_crew
-from tessera.agents.verifier import post_report
 from tessera.errors import PolicyError
 from tessera.llm.runner import TurnResult
 from tessera.orchestration.conditions import CrewConfig, config_for
 from tessera.orchestration.decision import DecisionEngine, PolicyDecision, derive_decision
 from tessera.orchestration.detector import run_detector
-from tessera.orchestration.gates import is_under_call, run_gates
+from tessera.orchestration.verification import verify_latest
 from tessera.protocol.common import REGULATOR_AGENTS, AgentId
-from tessera.protocol.results import FinalResult, VerifierReport
+from tessera.protocol.results import FinalResult
 from tessera.reporting.report import compose_final
 
 # Graph state is counters only, but tracing would still send it to a third party.
@@ -141,43 +140,13 @@ class CrewRun:
     async def verify(self, state: CrewState) -> dict[str, Any]:
         number = state["round"] + 1
         self._round(number, "verify")
-        proposal = self.board.proposals[-1]
-        decision = self.decide()
-        self.board.record(
-            "policy.derived",
-            AgentId.ORC,
-            {"proposal_version": proposal.version, **decision.summary()},
+        await verify_latest(
+            self.env,
+            self.crew[AgentId.VER],
+            number=number,
+            today=self.today,
+            options=self.config.options,
         )
-        gates = run_gates(self.env, proposal, decision)
-        under_call = is_under_call(proposal, decision)
-        failed = [gate for gate in gates if not gate.passed]
-        if failed:
-            post_report(
-                self.env,
-                VerifierReport(
-                    proposal_version=proposal.version,
-                    decision="VETO",
-                    gates=gates,
-                    veto_reasons=tuple(f"{gate.gate}: {gate.detail}" for gate in failed),
-                    under_call=under_call,
-                ),
-                number,
-            )
-            return {"round": number}
-        task = self._task("verify", number, gates=gates, under_call=under_call)
-        turn = (await self._turns((AgentId.VER, task)))[0]
-        if not turn.ok:
-            post_report(
-                self.env,
-                VerifierReport(
-                    proposal_version=proposal.version,
-                    decision="VETO",
-                    gates=gates,
-                    veto_reasons=("the Verifier could not finish its checks",),
-                    under_call=under_call,
-                ),
-                number,
-            )
         return {"round": number}
 
     async def remediate(self, state: CrewState) -> dict[str, Any]:

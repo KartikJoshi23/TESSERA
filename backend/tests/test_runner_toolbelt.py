@@ -140,6 +140,24 @@ def test_bad_arguments_go_back_to_the_model_as_an_error(harness):
     assert sum(e.type == "tool.failed" for e in setup.store.read("case-1")) == 4
 
 
+def test_a_payment_check_says_when_its_entry_is_not_a_register_entry(harness):
+    setup = harness(OFFER)
+    content, _ = setup.env.belt.execute(
+        "cma_warnings_lookup",
+        json.dumps({"name": "Nobody At All"}),
+        allowed=("cma_warnings_lookup",),
+        actor=AgentId.CMA,
+    )
+    no_match = json.loads(content)["no_match_evidence_id"]
+    content, ok = setup.env.belt.execute(
+        "analyse_payment",
+        json.dumps({"entity_evidence_id": no_match}),
+        allowed=("analyse_payment",),
+        actor=AgentId.CLN,
+    )
+    assert not ok and "must be a register entry" in content
+
+
 def test_unknown_evidence_ids_are_reported_to_the_model(harness):
     setup = harness(OFFER)
     content, ok = setup.env.belt.execute(

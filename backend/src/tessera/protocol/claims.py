@@ -158,6 +158,19 @@ Assertion = Annotated[
 
 ASSERTION_ADAPTER: TypeAdapter[Assertion] = TypeAdapter(Assertion)
 
+#: Findings a result rests on: what the records show about this offer.
+DECISIVE_TYPES = frozenset(
+    {
+        "register_match",
+        "register_no_match",
+        "licence_status",
+        "licence_scope",
+        "alert_hit",
+        "contact_assessment",
+        "payment_assessment",
+    }
+)
+
 #: Judgements and absences. They state no fact from a record, so they have nothing to cite.
 _NOTHING_TO_CITE = frozenset({"coverage_gap", "targeting", "relevance"})
 
@@ -167,3 +180,23 @@ def needs_evidence(assertion: Assertion) -> bool:
     if isinstance(assertion, ContactAssessment):
         return assertion.status != "not_comparable"
     return assertion.type not in _NOTHING_TO_CITE
+
+
+def describe(assertion: Assertion) -> str:
+    """One plain sentence for a typed assertion, where no agent wrote one."""
+    if isinstance(assertion, RegisterMatch):
+        return f"The {assertion.regulator} register has an entry matching this firm."
+    if isinstance(assertion, RegisterNoMatch):
+        return f"The {assertion.regulator} register has no entry for this firm."
+    if isinstance(assertion, LicenceStatus):
+        return f"The {assertion.regulator} entry has the status {assertion.status}."
+    if isinstance(assertion, LicenceScope):
+        verb = {"yes": "covers", "no": "does not cover"}.get(assertion.covered, "may not cover")
+        return f"The {assertion.regulator} licence {verb} the activity {assertion.activity}."
+    if isinstance(assertion, AlertHit):
+        return f"A record from {assertion.source_id} concerns this offer."
+    if isinstance(assertion, ContactAssessment):
+        return f"Contact point {assertion.cp_id}: {assertion.status.replace('_', ' ')}."
+    if isinstance(assertion, PaymentAssessment):
+        return "The payment details were compared with the register."
+    return f"The {assertion.type.replace('_', ' ')} is as recorded."

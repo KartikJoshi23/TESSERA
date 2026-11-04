@@ -96,6 +96,14 @@ def create_app(service: CaseService) -> FastAPI:
         except UnknownCase as exc:
             raise HTTPException(404, f"no case {case_id}") from exc
 
+    @app.get("/api/cases/{case_id}/trace")
+    def case_trace(case_id: str) -> dict[str, Any]:
+        """The whole case, with its coordination telemetry. Masked, as stored."""
+        try:
+            return service.trace(case_id)
+        except UnknownCase as exc:
+            raise HTTPException(404, f"no case {case_id}") from exc
+
     @app.get("/api/cases/{case_id}/report")
     def case_report(case_id: str) -> dict[str, Any]:
         try:

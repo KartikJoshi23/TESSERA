@@ -20,12 +20,12 @@ from tessera.agents.crew import CrewStack, covered_regulators
 from tessera.blackboard.board import Blackboard
 from tessera.blackboard.store import Event
 from tessera.devdata import load_smoke_cases
+from tessera.experiment import SAMPLE_MARK, open_condition, run_opened
 from tessera.governance.synthetic_gate import Channel, OfferInput, pii_warnings
-from tessera.orchestration.conditions import CONDITIONS, config_for
-from tessera.orchestration.graph import run_crew
 from tessera.protocol.case import SystemCondition
 from tessera.protocol.common import AgentId
 from tessera.reporting.report import CaseReport, render_report
+from tessera.reporting.telemetry import trace_bundle
 from tessera.tools import ToolContext
 
 logger = logging.getLogger(__name__)
@@ -76,7 +76,6 @@ class CaseService:
         """Admit an offer and run it in the background. Returns its ID and any warnings."""
         if not self.model_ready:
             raise ModelNotConfigured(self.not_ready_reason)
-        config_for(request.condition)  # refuses a condition with no crew configuration
         offer = OfferInput(
             text=request.text,
             synthetic=request.synthetic,
@@ -85,15 +84,15 @@ class CaseService:
             channel=request.channel,
         )
         case_id = f"case-{uuid.uuid4().hex[:12]}"
-        env = self.stack.open_case(case_id, offer, condition=request.condition)
-        task = asyncio.create_task(self._run(env))
+        env = open_condition(self.stack, case_id, offer, condition=request.condition)
+        task = asyncio.create_task(self._run(env, offer))
         self._running[case_id] = task
         task.add_done_callback(lambda _: self._running.pop(case_id, None))
         return case_id, [warning.message for warning in pii_warnings(offer.text)]
 
-    async def _run(self, env: AgentEnv) -> None:
+    async def _run(self, env: AgentEnv, offer: OfferInput) -> None:
         try:
-            await run_crew(env, today=self.today)
+            await run_opened(self.stack, env, offer, today=self.today or date.today())
         except Exception as exc:
             # Only the error's type is kept, because a message could quote a restricted value.
             logger.error("case %s stopped: %s", env.board.case_id, type(exc).__name__)
@@ -127,9 +126,14 @@ class CaseService:
         ctx = ToolContext.create(case_id, self.stack.settings, self.stack.registry)
         return render_report(board, ctx)
 
+    def trace(self, case_id: str) -> dict[str, Any]:
+        return trace_bundle(self.board(case_id), self.events(case_id))
+
     def cases(self) -> list[dict[str, Any]]:
         listed = []
         for case_id in self.stack.store.case_ids():
+            if SAMPLE_MARK in case_id:
+                continue
             board = self.board(case_id)
             listed.append(
                 {
@@ -164,7 +168,7 @@ class CaseService:
             "model_ready": self.model_ready,
             "not_ready_reason": self.not_ready_reason,
             "covered_regulators": sorted(covered_regulators(ctx.sources, stack.settings)),
-            "conditions": [condition.value for condition in CONDITIONS],
+            "conditions": [condition.value for condition in SystemCondition],
             "sources": sources,
         }
 

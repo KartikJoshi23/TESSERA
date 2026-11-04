@@ -80,6 +80,18 @@ def test_dfsa_lookup_in_research_mode(ctx):
         assert set(evidence.fields) <= RESTRICTED_SAFE_FIELDS  # no DFSA values in evidence
 
 
+def test_a_dfsa_no_match_gives_the_model_its_evidence(ctx):
+    """Otherwise an agent can never report that a firm is not on the DFSA register."""
+    result = dfsa_facts_lookup(ctx, name="Nobody At All Holdings")
+    ids = {e.evidence_id: e for e in result.evidence}
+    register = ids[result.summary["no_match_evidence_id"]]
+    alerts = ids[result.summary["alerts_no_match_evidence_id"]]
+    assert register.source_id == "dfsa_register" and alerts.source_id == "dfsa_alerts"
+    assert register.kind.value == alerts.kind.value == "no_match"
+    found = dfsa_facts_lookup(ctx, frn="F000000")
+    assert "no_match_evidence_id" not in found.summary
+
+
 def test_a_dfsa_alert_found_only_by_name_keeps_its_match_quality(ctx):
     """HC2 needs an exact name or a listed alias, so a near match must not read as exact."""
     near = dfsa_facts_lookup(ctx, name="Zenith Harbor")

@@ -370,7 +370,7 @@ def _dfsa_alert_facts(r: DfsaAlertFact) -> dict[str, Any]:
         "firm_named": r.firm_named,
         "frn_named": r.frn_named,
         "named_contacts": list(r.contact_points_named),
-        "legitimate_contacts": list(r.legitimate_contacts_stated),
+        "official_contacts_stated": list(r.legitimate_contacts_stated),
     }
 
 
@@ -562,6 +562,7 @@ def dfsa_facts_lookup(
     evidence: list[EvidenceRecord] = []
     register_matches: list[dict[str, Any]] = []
     alert_matches: list[dict[str, Any]] = []
+    no_match_ids: dict[str, str] = {}
 
     if register.available:
         found: list[_Hit] = []
@@ -606,6 +607,7 @@ def dfsa_facts_lookup(
             )
         if not best:
             evidence.append(_no_match(ctx, register, tool, query))
+            no_match_ids["no_match_evidence_id"] = evidence[-1].evidence_id
 
     if alerts.available:
         labels: dict[str, set[str]] = {}
@@ -618,7 +620,7 @@ def dfsa_facts_lookup(
             if _contact_in(r.contact_points_named, domain=domain, email=email, phone=phone):
                 matched.add("contact_named")
             if _contact_in(r.legitimate_contacts_stated, domain=domain, email=email, phone=phone):
-                matched.add("contact_legitimate")
+                matched.add("contact_stated_official")
             if matched:
                 labels[r.record_id], records[r.record_id] = matched, r
         if name:
@@ -654,8 +656,10 @@ def dfsa_facts_lookup(
             )
         if not labels:
             evidence.append(_no_match(ctx, alerts, tool, query))
+            no_match_ids["alerts_no_match_evidence_id"] = evidence[-1].evidence_id
 
     summary = {
+        **no_match_ids,
         "source_id": "dfsa",
         "available": True,
         "link": DFSA_HOMEPAGE,
@@ -735,7 +739,7 @@ def reverse_contact_lookup(ctx: ToolContext, value: str) -> ToolResult:
             for r in _typed(alerts, DfsaAlertFact):
                 for values, label in (
                     (r.contact_points_named, "contact_named"),
-                    (r.legitimate_contacts_stated, "contact_legitimate"),
+                    (r.legitimate_contacts_stated, "contact_stated_official"),
                 ):
                     if not _contact_in(values, **query):
                         continue

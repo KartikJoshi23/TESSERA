@@ -26,7 +26,7 @@ C1 relevance; C2 identity; C3 scope; C4 contact; C5 alert versus register; C6 mi
 {
   "new_conflicts": [{"type": "C4", "finding_ids": ["F-D1", "F-C1"], "summary": "The domain is alert-listed, but the agent treats it as official."}],
   "resolutions": [
-    {"conflict_id": "CF-1", "outcome": "upheld", "winning_finding_ids": ["F-C1"], "precedence_rule": "P2", "evidence_ids": ["E-0123456789abcdef"], "rationale": "The alert names this domain."}
+    {"conflict_id": "CF-1", "outcome": "upheld", "winning_finding_ids": ["F-C1"], "precedence_rule": "P2", "evidence_ids": ["<evidence ID>"], "rationale": "The alert names this domain."}
   ],
   "challenges": [
     {"performative": "CHALLENGE", "to": "JUR", "target_finding_id": "F-J4", "objection": "claim_not_fact", "question": "Does anything beyond the claimed address tie this business to the DIFC?", "rule_ids": ["JUR-01"], "evidence_ids": [], "rationale": "The exclusion rests on a claim."}

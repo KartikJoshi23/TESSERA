@@ -6,6 +6,12 @@ The case data may include an `inbox` of messages from other agents. Answer every
 - `CONCEDE`: withdraw your finding.
 - `ANSWER`: reply to a REQUEST. Put any new findings in the usual fields.
 
+Every item needs `message_id`, `action` and `rationale`. A REBUT or REVISE also needs at least one entry in `evidence_ids` or `rule_ids`:
+
+```json
+{"responses": [{"message_id": "M-3", "action": "REBUT", "rationale": "The register entry shows this.", "evidence_ids": ["<evidence ID>"], "rule_ids": []}]}
+```
+
 Change your position only for a reason you can cite. Another agent disagreeing is not a reason.
 
 ## Sending a message

@@ -29,7 +29,7 @@ from tessera.llm.runner import TurnResult
 from tessera.llm.testing import chat_reply, json_reply
 from tessera.llm.types import PermanentLLMError, TransientLLMError
 from tessera.orchestration.conditions import CONDITIONS, CrewConfig, config_for
-from tessera.orchestration.decision import PolicyDecision, derive_decision, relevant_regulators
+from tessera.orchestration.decision import PolicyDecision, derive_decision
 from tessera.orchestration.graph import run_crew
 from tessera.protocol.case import SystemCondition
 from tessera.protocol.common import AgentId, ResultCode
@@ -86,7 +86,7 @@ def synthesis_output(env: AgentEnv, **changes: Any) -> ReconcilerSynthesisOutput
     values: dict[str, Any] = {
         "relevant_regulators": [
             RelevantRegulatorItem(regulator=regulator, status="primary")
-            for regulator in sorted(relevant_regulators(env))
+            for regulator in sorted(env.board.relevant_regulators())
         ],
         "result": decision.result,
         "hard_conflicts": list(decision.hard_conflict_ids),
@@ -437,6 +437,16 @@ def test_a_report_states_only_the_hard_conflicts_the_evidence_backs(harness):
 
     _, final = careful_case(harness, "S10", REC=careful_reconciler(padded))
     assert final.hard_conflicts == ("HC4",)
+
+
+def test_a_report_states_every_hard_conflict_the_evidence_backs(harness):
+    """A proposal needs only one to pass the gates, and can miss the others."""
+
+    def partial(env: AgentEnv) -> ReconcilerSynthesisOutput:
+        return synthesis_output(env, hard_conflicts=["HC2"])
+
+    _, final = careful_case(harness, "S12", REC=careful_reconciler(partial))
+    assert set(final.hard_conflicts) == {"HC1", "HC2"}
 
 
 def test_a_more_cautious_proposal_is_kept_and_counted_as_an_under_call(harness):

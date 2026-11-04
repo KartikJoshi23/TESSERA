@@ -22,7 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from tessera.blackboard.board import Blackboard
 from tessera.errors import TesseraError
 from tessera.protocol.common import AgentId
-from tessera.protocol.evidence import EvidenceRecord, ToolResult
+from tessera.protocol.evidence import EvidenceKind, EvidenceRecord, ToolResult
 from tessera.tools import (
     ToolContext,
     analyse_payment,
@@ -148,6 +148,10 @@ def _run_analyse_phone(belt: ToolBelt, a: AnalysePhoneArgs) -> ToolResult:
 
 def _run_analyse_payment(belt: ToolBelt, a: AnalysePaymentArgs) -> ToolResult:
     entity = _required_evidence(belt, a.entity_evidence_id) if a.entity_evidence_id else None
+    if entity is not None and entity.kind is not EvidenceKind.REGISTER_ENTRY:
+        raise ValueError(
+            "entity_evidence_id must be a register entry; leave it out if none matched"
+        )
     names: list[str] = []
     if entity is not None:
         record = belt.ctx.registry.table(entity.source_id).get(entity.locator)

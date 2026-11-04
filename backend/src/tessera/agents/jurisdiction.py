@@ -27,6 +27,7 @@ class JurisdictionAgent(Agent):
         return (
             "_shared",
             "jurisdiction",
+            "_jurisdiction_guide",
             "_conversation",
             render_rule_cards(self.rule_card_text(env, "JUR-", "CLONE-")),
             render_activities(env.taxonomy),
