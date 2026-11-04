@@ -35,7 +35,7 @@ The full design is in [implementation-plan.md](implementation-plan.md).
 | 2 | Protocol, blackboard, LLM runner, the seven agents | ✅ Done |
 | 3 | Crew orchestration, reconciliation, Verifier, streaming API | ✅ Done |
 | 4 | Single-agent baselines and ablations | ✅ Done |
-| 5 | Frontend (Orchestration Theater) | Next |
+| 5 | Frontend (Orchestration Theater) | ✅ Done |
 | 6 | Datasets, evaluation harness, pilot | Planned |
 | 7 | Experiments and analysis | Planned |
 | 8 | CBUAE and ADGM FSRA | Planned |
@@ -71,6 +71,47 @@ Turn on the commit guard for your clone:
 ```bash
 git config core.hooksPath .githooks
 ```
+
+## Quick start (frontend)
+
+Requirements: Node 22. Start the API first, then the interface:
+
+```bash
+cd backend
+uv run tessera-api --fiction
+```
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open <http://localhost:3000>. Rules-only cases work without any key.
+
+| View | What it shows |
+|---|---|
+| Console (`/`) | System status and recent cases |
+| Intake (`/intake`) | A fictional example or your own synthetic text, with contact details found as you type |
+| Theater (`/cases/{id}`) | The crew at work, live or replayed. Findings fly into a mosaic round the Reconciler, and the Verifier is a gate on the only path to the result |
+| Dossier (`/cases/{id}/result`) | The result, with every claim tied to its evidence |
+| Arena (`/arena`) | Two systems on one offer, side by side |
+| Lab (`/lab`) | Evaluation results, with real records and synthetic messages kept apart |
+| Governance (`/governance`) | Every source's rules, and what is masked |
+
+To replay runs you have already made, join their event logs and open the result:
+
+```bash
+cd backend
+uv run tessera-replay ../runs/compare/crew-full/events/*.sqlite ../runs/compare/sa-base/events/*.sqlite --out ../runs/api/replay.sqlite
+uv run tessera-api --fiction --events ../runs/api/replay.sqlite
+```
+
+| Command (from `frontend/`) | What it does |
+|---|---|
+| `npm test` | Unit tests of the event reducer, timeline, geometry and comparisons |
+| `npm run e2e` | Browser tests against the real API on fictional data. They call no model |
+| `npm run lint`, `npm run typecheck` | Static checks |
 
 ## Modes
 
@@ -128,11 +169,15 @@ Without `--fiction` it uses the data in `data/`.
 |---|---|
 | `GET /api/status` | Mode, model, covered regulators and what data is loaded |
 | `GET /api/examples` | The fictional offers |
+| `POST /api/preview` | The contact details and warnings for a text. Nothing is stored |
 | `POST /api/cases` | Starts a case. Anything not marked synthetic is refused |
 | `GET /api/cases/{id}/events` | Every event of a case in order, live or replayed, as Server-Sent Events |
 | `GET /api/cases/{id}/report` | The finished report |
 | `GET /api/cases/{id}` | The full masked case state |
 | `GET /api/cases/{id}/trace` | The whole case with its coordination telemetry, masked |
+
+Every response is sent with `Cache-Control: no-store`, because a report can hold DFSA facts.
+RULES-ONLY runs without a key. Other conditions answer `503` until one is set.
 
 Interactive documentation is at `/api/docs`.
 

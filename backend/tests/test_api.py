@@ -1,6 +1,8 @@
 """The local API and the case-runner command, with scripted model replies."""
 
+import asyncio
 import json
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,8 +10,10 @@ from fastapi.testclient import TestClient
 from tessera.agents.crew import build_stack
 from tessera.api import app as api_app
 from tessera.api.app import create_app, main
+from tessera.api.replay import merge_logs
 from tessera.api.service import CaseService
-from tessera.blackboard.store import EventStore
+from tessera.blackboard.store import Event, EventStore
+from tessera.config.settings import Mode
 from tessera.devdata import FICTION_DATE, load_smoke_cases
 from tessera.errors import PolicyError
 from tessera.governance.synthetic_gate import OfferInput
@@ -17,7 +21,7 @@ from tessera.llm.config import load_models_policy
 from tessera.llm.testing import ScriptedTransport, chat_reply
 from tessera.orchestration.cli import main as run_main
 
-from .conftest import REPO_ROOT
+from .conftest import REPO_ROOT, make_settings
 
 MODELS = load_models_policy(REPO_ROOT / "policies")
 SMOKE = {case.id: case for case in load_smoke_cases(REPO_ROOT)}
@@ -65,6 +69,97 @@ def test_status_says_what_is_loaded_and_covered(client):
     assert {s["source_id"] for s in status["sources"]} >= {"cma_licensed", "dfsa_register"}
     assert all(s["as_of"] == "2026-11-04" for s in status["sources"])
     assert {"CREW-FULL", "SA-BASE", "RULES-ONLY"} <= set(status["conditions"])
+
+
+def test_run_logs_join_into_one_log_with_each_case_named_by_condition(tmp_path, service):
+    record = {"case_id": "S01", "condition": "CREW-FULL"}
+    first, second = EventStore(tmp_path / "a.sqlite"), EventStore(tmp_path / "b.sqlite")
+    now = datetime.now(UTC)
+    first.append(Event(case_id="S01", ts=now, actor="ORC", type="case.created", payload=record))
+    first.append(Event(case_id="S01", ts=now, actor="JUR", type="agent.activated"))
+    other = {**record, "condition": "SA-BASE"}
+    second.append(Event(case_id="S01", ts=now, actor="ORC", type="case.created", payload=other))
+    first.close()
+    second.close()
+
+    target = tmp_path / "joined.sqlite"
+    assert merge_logs([tmp_path / "a.sqlite", tmp_path / "b.sqlite"], target) == 2
+
+    joined = EventStore(target)
+    assert joined.case_ids() == ["S01~CREW-FULL", "S01~SA-BASE"]
+    events = joined.read("S01~CREW-FULL")
+    assert [event.type for event in events] == ["case.created", "agent.activated"]
+    assert events[0].payload["case_id"] == "S01~CREW-FULL"
+    joined.close()
+
+    with pytest.raises(FileExistsError):
+        merge_logs([tmp_path / "a.sqlite"], target)
+
+
+def test_intake_can_preview_contact_points_without_starting_anything(client, service):
+    text = "Pay with card 4111 1111 1111 1111 at falconridge.example."
+    preview = client.post("/api/preview", json={"text": text}).json()
+    domain = next(p for p in preview["contact_points"] if p["kind"] == "domain")
+    assert domain == {"kind": "domain", "value": "falconridge.example", "role": "deciding"}
+    assert preview["warnings"]
+    assert service.stack.store.case_ids() == []
+
+
+def test_no_response_may_be_cached(client):
+    assert client.get("/api/status").headers["cache-control"] == "no-store"
+
+
+def test_rules_only_runs_without_a_model(populated_settings):
+    service = make_service(populated_settings, model_ready=False, not_ready_reason="no key")
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        refused = client.post("/api/cases", json=OFFER)
+        assert refused.status_code == 503
+        started = client.post("/api/cases", json={**OFFER, "condition": "RULES-ONLY"})
+        assert started.status_code == 202
+        asyncio.run(service.wait())
+        report = client.get(f"/api/cases/{started.json()['case_id']}/report")
+    assert report.status_code == 200 and report.json()["condition"] == "RULES-ONLY"
+
+
+def _everything_served(client, case_id):
+    paths = ["/api/status", "/api/cases", *(f"/api/cases/{case_id}{x}" for x in ("", "/report"))]
+    paths += [f"/api/cases/{case_id}/trace", f"/api/cases/{case_id}/events"]
+    return "\n".join(client.get(path).text for path in paths)
+
+
+#: Facts in the fictional DFSA records that S09's own text does not state.
+RESTRICTED_VALUES = ("Arranging Deals", "2026-01-14", "D-R-001", "D-A-007")
+
+
+def test_demo_mode_serves_no_restricted_value_anywhere(populated_settings):
+    demo = make_settings(populated_settings.data_path, Mode.RESTRICTED_DEMO)
+    service = make_service(demo)
+    with TestClient(create_app(service), base_url="http://localhost") as client:
+        case_id = client.post("/api/cases", json={**OFFER, "condition": "RULES-ONLY"}).json()
+        asyncio.run(service.wait())
+        served = _everything_served(client, case_id["case_id"])
+    assert '"RESTRICTED_DEMO"' in served
+    assert not [value for value in RESTRICTED_VALUES if value in served]
+
+
+def test_research_mode_can_show_a_restricted_date_in_a_report_only(client, service):
+    # This is what the demo test would catch: the same check, where the date is allowed.
+    case_id = client.post("/api/cases", json={**OFFER, "condition": "RULES-ONLY"}).json()["case_id"]
+    asyncio.run(service.wait())
+    assert "2026-01-14" in client.get(f"/api/cases/{case_id}/report").text
+    assert "2026-01-14" not in client.get(f"/api/cases/{case_id}/trace").text
+
+
+def test_status_states_each_source_s_rules(client):
+    sources = {s["source_id"]: s for s in client.get("/api/status").json()["sources"]}
+    assert sources["dfsa_register"]["restricted"] is True
+    assert sources["dfsa_register"]["deep_links_allowed"] is False
+    assert sources["cma_licensed"]["access_method"] == "manual_export"
+    assert not any(source["automated_access"] for source in sources.values())
+
+
+def test_status_counts_the_values_being_masked(client, service):
+    assert client.get("/api/status").json()["masked_values"] == len(service.stack.gateway) > 0
 
 
 def test_examples_are_fictional_and_hold_no_gold(client):
@@ -183,7 +278,7 @@ def test_a_stream_ends_for_a_case_nothing_is_running(client, service):
     service.stack.open_case("orphan", offer)
     with client.stream("GET", "/api/cases/orphan/events") as stream:
         body = "\n".join(stream.iter_lines())
-    assert "case.created" in body and "event: case.interrupted" in body
+    assert "case.created" in body and "case.interrupted" in body
 
 
 def test_a_finished_case_has_a_report_and_a_state(client, service):
@@ -236,7 +331,9 @@ def test_only_local_pages_may_call_the_api(client):
 def test_the_server_binds_to_this_machine_only(monkeypatch, populated_settings):
     seen = {}
     monkeypatch.setattr(api_app.uvicorn, "run", lambda app, **kwargs: seen.update(kwargs))
-    monkeypatch.setattr(api_app, "build_service", lambda fiction: make_service(populated_settings))
+    monkeypatch.setattr(
+        api_app, "build_service", lambda fiction, events: make_service(populated_settings)
+    )
     assert main([]) == 0
     assert seen["host"] == "127.0.0.1"
     with pytest.raises(SystemExit):

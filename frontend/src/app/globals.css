@@ -1,0 +1,404 @@
+/*
+ * The glass-mosaic control room (plan §15). Every colour is a token here, so a view never states a
+ * colour of its own. Red is reserved for the Verifier's veto and appears nowhere else.
+ */
+@import "tailwindcss";
+
+@theme {
+  --color-lapis-950: #05070d;
+  --color-lapis-900: #0a0f1c;
+  --color-lapis-800: #111a2e;
+  --color-lapis-700: #1a2540;
+
+  --color-text: #eaf0f8;
+  --color-text-2: #b2bfd2;
+  --color-text-3: #8f9db3;
+  --color-line: rgb(255 255 255 / 0.09);
+  --color-line-strong: rgb(255 255 255 / 0.16);
+
+  /* Agents */
+  --color-jur: #e9c46a;
+  --color-cma: #2dd4bf;
+  --color-dfsa: #60a5fa;
+  --color-vara: #a78bfa;
+  --color-cln: #f49ac1;
+  --color-rec: #f1f5f9;
+  --color-ver: #34d399;
+  --color-sa: #7dd3fc;
+
+  /* Messages */
+  --color-inform: #22d3ee;
+  --color-request: #a78bfa;
+  --color-challenge: #fbbf24;
+  --color-rebut: #fb923c;
+  --color-revise: #2dd4bf;
+  --color-concede: #94a3b8;
+  --color-resolve: #f1f5f9;
+  --color-veto: #ef4444;
+  --color-approve: #34d399;
+
+  /* Results */
+  --color-consistent: #2dd4bf;
+  --color-conflicts: #f0a020;
+  --color-unverified: #a5b4fc;
+
+  --font-sans: var(--font-geist-sans), "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-display: "Unbounded Variable", var(--font-geist-sans), sans-serif;
+
+  --shadow-glass: 0 24px 60px -24px rgb(0 0 0 / 0.75), 0 2px 8px -2px rgb(0 0 0 / 0.5);
+  --ease-settle: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The page colour sits on the root, so the aurora can show between it and the content. */
+html {
+  color-scheme: dark;
+  background-color: var(--color-lapis-950);
+  background-image: linear-gradient(
+    170deg,
+    var(--color-lapis-950) 0%,
+    var(--color-lapis-900) 100%
+  );
+  background-attachment: fixed;
+  scrollbar-color: var(--color-lapis-700) transparent;
+}
+
+body {
+  min-height: 100dvh;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-inform);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: rgb(34 211 238 / 0.3);
+}
+
+/* ------------------------------------------------------------- the room */
+
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.aurora::before,
+.aurora::after {
+  content: "";
+  position: absolute;
+  width: 72vmax;
+  height: 72vmax;
+  border-radius: 50%;
+  filter: blur(110px);
+  opacity: 0.36;
+  will-change: transform;
+}
+
+.aurora::before {
+  top: -38vmax;
+  left: -16vmax;
+  background: radial-gradient(circle at 40% 40%, #0d9488 0%, #155e75 42%, transparent 70%);
+  animation: drift-a 34s ease-in-out infinite alternate;
+}
+
+.aurora::after {
+  right: -24vmax;
+  bottom: -44vmax;
+  background: radial-gradient(circle at 60% 50%, #5b21b6 0%, #1e3a8a 44%, transparent 70%);
+  animation: drift-b 42s ease-in-out infinite alternate;
+}
+
+@keyframes drift-a {
+  to {
+    transform: translate3d(14vmax, 8vmax, 0) scale(1.14);
+  }
+}
+
+@keyframes drift-b {
+  to {
+    transform: translate3d(-16vmax, -10vmax, 0) scale(1.1);
+  }
+}
+
+/* A faint grid of tiles, and a little noise so the gradients do not band. */
+.mosaic-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='146' viewBox='0 0 84 146'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.035'%3E%3Cpath d='M42 1 83 24.5v49L42 97 1 73.5v-49z'/%3E%3Cpath d='M42 97v48M1 73.5 0 74M83 73.5l1 .5'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E");
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, black 40%, transparent 100%);
+}
+
+/* ------------------------------------------------------------- glass */
+
+.glass {
+  position: relative;
+  background: linear-gradient(160deg, rgb(26 37 64 / 0.62), rgb(10 15 28 / 0.72));
+  border: 1px solid var(--color-line);
+  border-radius: 18px;
+  box-shadow: var(--shadow-glass), inset 0 1px 0 rgb(255 255 255 / 0.07);
+  backdrop-filter: blur(20px) saturate(135%);
+  -webkit-backdrop-filter: blur(20px) saturate(135%);
+}
+
+.glass-thin {
+  background: rgb(17 26 46 / 0.55);
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+}
+
+.eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-3);
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------- controls */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  padding: 0 1.1rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.05);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 160ms,
+    border-color 160ms,
+    transform 160ms;
+}
+
+.button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.1);
+  border-color: rgb(255 255 255 / 0.28);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.button-primary {
+  border-color: rgb(45 212 191 / 0.55);
+  background: linear-gradient(180deg, rgb(45 212 191 / 0.28), rgb(45 212 191 / 0.14));
+  box-shadow: 0 0 24px -8px rgb(45 212 191 / 0.6);
+}
+
+.button-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgb(45 212 191 / 0.4), rgb(45 212 191 / 0.2));
+  border-color: rgb(45 212 191 / 0.8);
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9px;
+  color: var(--color-text-2);
+  cursor: pointer;
+  transition:
+    background 140ms,
+    color 140ms;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.08);
+  color: var(--color-text);
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.icon-button[aria-pressed="true"] {
+  background: rgb(255 255 255 / 0.12);
+  color: var(--color-text);
+}
+
+.field {
+  width: 100%;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 12px;
+  background: rgb(5 7 13 / 0.55);
+  color: var(--color-text);
+  transition:
+    border-color 160ms,
+    box-shadow 160ms;
+}
+
+.field::placeholder {
+  color: var(--color-text-3);
+}
+
+.field:focus {
+  outline: none;
+  border-color: rgb(34 211 238 / 0.7);
+  box-shadow: 0 0 0 3px rgb(34 211 238 / 0.15);
+}
+
+/* The timeline's scrubber. */
+.scrubber {
+  appearance: none;
+  width: 100%;
+  height: 1.25rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scrubber::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-line-strong);
+}
+
+.scrubber::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border-radius: 4px;
+  background: var(--color-rec);
+  box-shadow: 0 0 12px rgb(241 245 249 / 0.6);
+  transform: rotate(45deg);
+}
+
+.scrubber::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-line-strong);
+}
+
+.scrubber::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--color-rec);
+  transform: rotate(45deg);
+}
+
+/* A long list stays cheap: the browser skips rows it cannot see. */
+.lazy-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
+}
+
+.pane-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-lapis-700) transparent;
+}
+
+/* ------------------------------------------------------------- the stage */
+
+.tile-breathe {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* An SVG element turns about its own user-space origin, which is the agent's centre. */
+.satellite {
+  animation: orbit 2.6s linear infinite;
+}
+
+@keyframes orbit {
+  to {
+    rotate: 360deg;
+  }
+}
+
+.stage text {
+  user-select: none;
+}
+
+.stage [role="button"]:focus-visible {
+  outline: none;
+}
+
+.stage [role="button"]:focus-visible .focus-ring {
+  stroke: var(--color-inform);
+  stroke-width: 2.5;
+  stroke-opacity: 1;
+}
+
+/* Nothing here depends on motion to be understood, so it can all stop. */
+@media (prefers-reduced-motion: reduce) {
+  .aurora::before,
+  .aurora::after,
+  .tile-breathe,
+  .satellite {
+    animation: none;
+  }
+}
+
+/* Paused by the page while the tab is hidden. */
+html[data-hidden] .aurora::before,
+html[data-hidden] .aurora::after,
+html[data-hidden] .tile-breathe,
+html[data-hidden] .satellite {
+  animation-play-state: paused;
+}
+
+@media print {
+  .aurora,
+  .mosaic-grid,
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+    color: black;
+  }
+
+  .glass {
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+}

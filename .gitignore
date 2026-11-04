@@ -32,9 +32,15 @@ dist/
 node_modules/
 .next/
 frontend/out/
+frontend/.playwright/
+frontend/next-env.d.ts
+*.tsbuildinfo
 
 # --- OS and editors ---
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+
+# --- Local editor and agent settings ---
+.claude/

@@ -14,6 +14,7 @@ import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import uvicorn
@@ -21,6 +22,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from sse_starlette.sse import EventSourceResponse
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from tessera.agents.crew import build_stack
 from tessera.api.service import (
@@ -29,6 +32,7 @@ from tessera.api.service import (
     CaseRequest,
     CaseService,
     ModelNotConfigured,
+    PreviewRequest,
     UnknownCase,
 )
 from tessera.blackboard.store import EventStore
@@ -46,6 +50,24 @@ DEFAULT_PORT = 8000
 _POLL_SECONDS = 0.2
 
 
+class _NoStore:
+    """A report can hold DFSA facts, and the DFSA disclaimer bars caching them.
+
+    This is plain ASGI, so a live event stream passes through it untouched.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        async def send_uncached(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["Cache-Control"] = "no-store"
+            await send(message)
+
+        await self.app(scope, receive, send_uncached if scope["type"] == "http" else send)
+
+
 def create_app(service: CaseService) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -59,6 +81,7 @@ def create_app(service: CaseService) -> FastAPI:
     app.add_middleware(
         CORSMiddleware, allow_origins=LOCAL_ORIGINS, allow_methods=["*"], allow_headers=["*"]
     )
+    app.add_middleware(_NoStore)
 
     @app.get("/api/status")
     def status() -> dict[str, Any]:
@@ -67,6 +90,10 @@ def create_app(service: CaseService) -> FastAPI:
     @app.get("/api/examples")
     def examples() -> list[dict[str, Any]]:
         return service.examples()
+
+    @app.post("/api/preview")
+    def preview(request: PreviewRequest) -> dict[str, Any]:
+        return service.preview(request.text)
 
     @app.get("/api/cases")
     def cases() -> list[dict[str, Any]]:
@@ -128,7 +155,6 @@ def create_app(service: CaseService) -> FastAPI:
                     position = event.seq or position
                     yield {
                         "id": str(event.seq),
-                        "event": event.type,
                         "data": json.dumps(
                             event.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
                         ),
@@ -138,7 +164,7 @@ def create_app(service: CaseService) -> FastAPI:
                 # Nothing is running this case, for example after a restart, so nothing else
                 # will arrive. The second read catches a case that ended since the first.
                 if not service.is_running(case_id) and not service.events(case_id, after=position):
-                    yield {"event": "case.interrupted", "data": json.dumps({"case_id": case_id})}
+                    yield {"data": json.dumps({"case_id": case_id, "type": "case.interrupted"})}
                     return
                 await asyncio.sleep(_POLL_SECONDS)
 
@@ -154,16 +180,20 @@ class _NoModel:
         raise PermanentLLMError("no model is configured")
 
 
-def _not_ready_stack(settings: Settings, reason: str) -> CaseService:
-    """Without a key, finished cases can still be read. Starting one reports the reason."""
+def _not_ready_stack(
+    settings: Settings, store: EventStore, reason: str, today: date | None
+) -> CaseService:
+    """Without a key, finished cases can still be read, and RULES-ONLY can still run."""
     models = load_models_policy(settings.policies_dir)
-    store = EventStore(settings.root / "runs" / "api" / "events.sqlite")
     stack = build_stack(settings, _NoModel(), store, models)
-    return CaseService(stack, model_ready=False, not_ready_reason=reason)
+    return CaseService(stack, model_ready=False, not_ready_reason=reason, today=today)
 
 
-def build_service(*, fiction: bool = False) -> CaseService:
-    """The live service. ``fiction`` uses the fictional world, in its own folder."""
+def build_service(*, fiction: bool = False, events: Path | None = None) -> CaseService:
+    """The live service. ``fiction`` uses the fictional world, in its own folder.
+
+    ``events`` opens an existing run's event log, so the frontend can replay real cases.
+    """
     root = load_settings().root
     settings = (
         load_settings(mode=Mode.RESEARCH_INTERNAL, data_dir=(root / "runs" / "api" / "data"))
@@ -174,12 +204,14 @@ def build_service(*, fiction: bool = False) -> CaseService:
     if fiction:
         install_world(settings)
         today = FICTION_DATE
+    # Fiction keeps a log of its own, because a report is rebuilt against the same data.
+    log = "fiction-events.sqlite" if fiction else "events.sqlite"
+    store = EventStore(events or settings.root / "runs" / "api" / log)
     models = load_models_policy(settings.policies_dir)
     try:
         transport, _ = build_live_transport(settings, models)
     except PolicyError as exc:
-        return _not_ready_stack(settings, str(exc))
-    store = EventStore(settings.root / "runs" / "api" / "events.sqlite")
+        return _not_ready_stack(settings, store, str(exc), today)
     return CaseService(build_stack(settings, transport, store, models), today=today)
 
 
@@ -189,8 +221,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--fiction", action="store_true", help="use the fictional world, not the data/ folder"
     )
+    parser.add_argument("--events", type=Path, help="open an existing run's event log")
     args = parser.parse_args(argv)
-    uvicorn.run(create_app(build_service(fiction=args.fiction)), host="127.0.0.1", port=args.port)
+    service = build_service(fiction=args.fiction, events=args.events)
+    uvicorn.run(create_app(service), host="127.0.0.1", port=args.port)
     return 0
 
 

@@ -26,7 +26,7 @@ from tessera.protocol.case import SystemCondition
 from tessera.protocol.common import AgentId
 from tessera.reporting.report import CaseReport, render_report
 from tessera.reporting.telemetry import trace_bundle
-from tessera.tools import ToolContext
+from tessera.tools import ToolContext, extract_contact_points
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,12 @@ class CaseRequest(BaseModel):
     synthetic_attestation: bool = False
     channel: Channel | None = None
     condition: SystemCondition = SystemCondition.CREW_FULL
+
+
+class PreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(max_length=20_000)
 
 
 class UnknownCase(LookupError):
@@ -74,7 +80,8 @@ class CaseService:
 
     def start(self, request: CaseRequest) -> tuple[str, list[str]]:
         """Admit an offer and run it in the background. Returns its ID and any warnings."""
-        if not self.model_ready:
+        # RULES-ONLY calls no model, so it runs without a key.
+        if not self.model_ready and request.condition is not SystemCondition.RULES_ONLY:
             raise ModelNotConfigured(self.not_ready_reason)
         offer = OfferInput(
             text=request.text,
@@ -145,6 +152,16 @@ class CaseService:
             )
         return listed
 
+    def preview(self, text: str) -> dict[str, Any]:
+        """What Intake shows as someone types. Nothing is stored, and no model is called."""
+        return {
+            "contact_points": [
+                {"kind": point.kind.value, "value": point.raw, "role": point.role.value}
+                for point in extract_contact_points(text)
+            ],
+            "warnings": [warning.message for warning in pii_warnings(text)],
+        }
+
     def status(self) -> dict[str, Any]:
         stack = self.stack
         ctx = ToolContext.create("status", stack.settings, stack.registry)
@@ -160,6 +177,12 @@ class CaseService:
                     "regulator": policy.regulator,
                     "as_of": manifest.retrieved_on.isoformat() if manifest else None,
                     "rows": manifest.row_count if manifest else 0,
+                    "access_method": policy.access_method,
+                    "automated_access": policy.automated_access,
+                    "deep_links_allowed": policy.deep_links_allowed,
+                    "restricted": policy.restricted,
+                    "storage": policy.storage,
+                    "public_release": policy.public_release,
                 }
             )
         return {
@@ -168,6 +191,7 @@ class CaseService:
             "model_ready": self.model_ready,
             "not_ready_reason": self.not_ready_reason,
             "covered_regulators": sorted(covered_regulators(ctx.sources, stack.settings)),
+            "masked_values": len(stack.gateway),
             "conditions": [condition.value for condition in SystemCondition],
             "sources": sources,
         }

@@ -1,0 +1,211 @@
+{
+ "runs": [
+  {
+   "run": "rules-only",
+   "condition": "RULES-ONLY",
+   "rate_limited": 0,
+   "cases": [
+    {
+     "case": "S01",
+     "gold": "CONSISTENT",
+     "result": "CONSISTENT",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S02",
+     "gold": "CONSISTENT",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S03",
+     "gold": "CONSISTENT",
+     "result": "CONSISTENT",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S04",
+     "gold": "CONSISTENT",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S05",
+     "gold": "CONSISTENT",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S06",
+     "gold": "CONSISTENT",
+     "result": "CONSISTENT",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S07",
+     "gold": "CONSISTENT",
+     "result": "CONSISTENT",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S08",
+     "gold": "CONSISTENT",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S09",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S10",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S11",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S12",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S13",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S14",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S15",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S16",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S17",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S18",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S19",
+     "gold": "CONFLICTS",
+     "result": "CONFLICTS",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S20",
+     "gold": "UNVERIFIED",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S21",
+     "gold": "UNVERIFIED",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S22",
+     "gold": "UNVERIFIED",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S23",
+     "gold": "UNVERIFIED",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S24",
+     "gold": "UNVERIFIED",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    },
+    {
+     "case": "S25",
+     "gold": "UNVERIFIED",
+     "result": "UNVERIFIED",
+     "requests": 0,
+     "tokens": 0,
+     "seconds": 0
+    }
+   ]
+  }
+ ]
+}

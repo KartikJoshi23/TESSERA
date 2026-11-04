@@ -25,6 +25,7 @@ tessera-probe = "tessera.llm.probe:main"
 tessera-smoke = "tessera.agents.smoke:main"
 tessera-run = "tessera.orchestration.cli:main"
 tessera-api = "tessera.api.app:main"
+tessera-replay = "tessera.api.replay:main"
 
 [dependency-groups]
 dev = [

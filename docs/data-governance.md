@@ -145,3 +145,13 @@ verify".
   2. Rewrite history to remove the file, then force-push. Only do this after agreeing it with
      the repository owner.
   3. Record what happened in the decision log.
+
+## The interface
+
+- The frontend holds no regulator data of its own. It shows only what the local API returns.
+- Links to a regulator come only from the backend, which allows the DFSA's homepage and nothing
+  else. A browser test checks every link on a report.
+- Every API response is sent with `Cache-Control: no-store`, so a browser keeps no copy of a
+  report that holds DFSA facts.
+- The file a person can export is the masked trace. The report itself is not exported.
+- The Lab's development numbers come from fictional runs only (`scripts/summarize_smoke.py`).
