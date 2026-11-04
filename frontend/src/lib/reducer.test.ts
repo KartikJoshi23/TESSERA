@@ -199,6 +199,34 @@ describe("single events", () => {
     expect(answered.findings[0]?.status).toBe("challenged");
   });
 
+  it("leaves a withdrawn finding as it is when an agent's findings are superseded", () => {
+    const posted = reduce(
+      reduce(
+        emptyView(),
+        event("finding.posted", { finding_id: "F-1", author: "SA", assertion: {} }, "SA"),
+      ),
+      event("finding.posted", { finding_id: "F-2", author: "SA", assertion: {} }, "SA"),
+    );
+    const conceded = reduce(
+      posted,
+      event(
+        "message.sent",
+        { msg_id: "M-1", sender: "SA", performative: "CONCEDE", refs: ["F-1"] },
+        "SA",
+      ),
+    );
+    const view = reduce(conceded, event("findings.superseded", { author: "SA" }));
+    expect(view.findings.map((finding) => finding.status)).toEqual(["withdrawn", "superseded"]);
+  });
+
+  it("keeps the vote behind a sampled result", () => {
+    const view = reduce(
+      emptyView(),
+      event("votes.counted", { votes: { UNVERIFIED: 3, CONFLICTS: 2 } }),
+    );
+    expect(view.votes).toEqual({ UNVERIFIED: 3, CONFLICTS: 2 });
+  });
+
   it("marks a conceded finding as withdrawn", () => {
     const posted = reduce(
       emptyView(),

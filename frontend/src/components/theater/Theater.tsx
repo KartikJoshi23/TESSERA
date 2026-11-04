@@ -16,6 +16,7 @@ import {
   PERFORMATIVE_COLOR,
   PHASE_LABEL,
   PHASE_NOTE,
+  RESULT_LOOK,
 } from "@/lib/vocabulary";
 import { Blackboard, type BoardTab } from "./Blackboard";
 import { Glyph } from "./Glyph";
@@ -90,6 +91,17 @@ function Legend() {
 function PhaseCaption({ view }: { view: CaseView }) {
   const phase = view.rounds.at(-1)?.phase;
   const rules = view.condition === "RULES-ONLY";
+  if (view.votes) {
+    const tally = Object.entries(view.votes)
+      .map(([result, count]) => `${RESULT_LOOK[result]?.label ?? result}: ${count}`)
+      .join(". ");
+    return (
+      <div className="pointer-events-none absolute top-3 left-4 z-10 max-w-60" data-testid="phase-caption">
+        <p className="eyebrow">Five samples voted</p>
+        <p className="mt-1 text-xs leading-snug text-text-2">{tally}.</p>
+      </div>
+    );
+  }
   if (!phase && !rules) return null;
   const title = rules ? "Rules only" : (phase && PHASE_LABEL[phase]) || phase;
   const note = rules

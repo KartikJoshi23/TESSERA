@@ -141,6 +141,8 @@ export interface CaseView {
   proposals: Proposal[];
   verdicts: Verdict[];
   policy: PolicyView | null;
+  /** SA-SC5 only: how the sampled runs voted. */
+  votes: Record<string, number> | null;
   final: FinalResult | null;
   evidence: number;
   requests: number;
@@ -187,6 +189,7 @@ export function emptyView(): CaseView {
     proposals: [],
     verdicts: [],
     policy: null,
+    votes: null,
     final: null,
     evidence: 0,
     requests: 0,
@@ -388,7 +391,9 @@ function apply(view: CaseView, event: CaseEvent): CaseView {
       return {
         ...view,
         findings: view.findings.map((finding) =>
-          finding.author === payload.author ? { ...finding, status: "superseded" } : finding,
+          finding.author === payload.author && finding.status !== "withdrawn"
+            ? { ...finding, status: "superseded" }
+            : finding,
         ),
       };
     case "message.sent":
@@ -458,6 +463,8 @@ function apply(view: CaseView, event: CaseEvent): CaseView {
           reasons: (payload.unverified_reasons ?? []) as string[],
         },
       };
+    case "votes.counted":
+      return { ...view, votes: (payload.votes ?? {}) as Record<string, number> };
     case "verifier.decision": {
       const decision = String(payload.decision);
       const reasons = (payload.veto_reasons ?? []) as string[];

@@ -25,7 +25,7 @@ function Tile({ finding, slot, cited, selected, still, onSelect }: TileProps) {
   const from = anchorOf(finding.author);
   const gone = finding.status === "superseded" || finding.status === "withdrawn";
   const challenged = finding.status === "challenged";
-  const strength = cited === null ? 0.55 : cited ? 0.9 : 0.16;
+  const strength = cited === null ? 0.55 : cited ? 0.9 : 0.24;
   return (
     <motion.g
       data-testid="finding-tile"
@@ -46,7 +46,7 @@ function Tile({ finding, slot, cited, selected, still, onSelect }: TileProps) {
         fill={look.color}
         fillOpacity={strength}
         stroke={challenged ? "var(--color-challenge)" : selected ? "var(--color-text)" : look.color}
-        strokeOpacity={challenged || selected ? 1 : cited === false ? 0.35 : 0.9}
+        strokeOpacity={challenged || selected ? 1 : cited === false ? 0.45 : 0.9}
         strokeWidth={challenged || selected ? 2 : 1}
         strokeDasharray={gone ? "3 3" : undefined}
       />
