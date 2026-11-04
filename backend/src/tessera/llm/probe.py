@@ -244,18 +244,28 @@ async def probe_model(
     return report
 
 
-def _print_table(reports: list[ModelReport]) -> None:
-    print(f"{'model':<48} {'tools':>7} {'round':>7} {'json':>7} {'repair':>7} {'sec':>6}  pass")
-    for r in reports:
-        latency = f"{r.median_latency_seconds:.1f}" if r.median_latency_seconds is not None else "-"
-        tools = f"{r.tool_valid:>3}/{r.tool_trials:<3} {r.tool_round_trip:>3}/{r.tool_trials:<3}"
-        json_ok = (
-            f"{r.json_valid_first_try:>3}/{r.json_trials:<3} "
-            f"{r.json_valid_after_repair:>3}/{r.json_trials:<3}"
-        )
-        print(f"{r.model:<48} {tools} {json_ok} {latency:>6}  {'yes' if r.passed else 'no'}")
-        for error in sorted(set(r.errors))[:3]:
-            print(f"    error: {error}")
+_HEADER = f"{'model':<48} {'tools':>7} {'round':>7} {'json':>7} {'repair':>7} {'sec':>6}  pass"
+
+
+def _print_row(r: ModelReport) -> None:
+    latency = f"{r.median_latency_seconds:.1f}" if r.median_latency_seconds is not None else "-"
+    tools = f"{r.tool_valid:>3}/{r.tool_trials:<3} {r.tool_round_trip:>3}/{r.tool_trials:<3}"
+    json_ok = (
+        f"{r.json_valid_first_try:>3}/{r.json_trials:<3} "
+        f"{r.json_valid_after_repair:>3}/{r.json_trials:<3}"
+    )
+    print(
+        f"{r.model:<48} {tools} {json_ok} {latency:>6}  {'yes' if r.passed else 'no'}", flush=True
+    )
+    for error in sorted(set(r.errors))[:3]:
+        print(f"    error: {error}", flush=True)
+
+
+def _write_report(path: Path, reports: list[ModelReport]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps([r.model_dump() for r in reports], indent=2, ensure_ascii=False), "utf-8"
+    )
 
 
 async def _run(args: argparse.Namespace) -> int:
@@ -268,24 +278,22 @@ async def _run(args: argparse.Namespace) -> int:
         return 2
     wanted = args.models or [m for group in models.candidates.values() for m in group]
     llm = GuardedLLM(transport, MaskingGateway([]))
+    path = settings.root / "runs" / "probe" / f"probe-{datetime.now(UTC):%Y%m%dT%H%M%SZ}.json"
+    reports: list[ModelReport] = []
+    print(_HEADER, flush=True)
     try:
         available = set(await http.list_models())
-        reports = []
         for model in dict.fromkeys(wanted):
-            print(f"probing {model} …", flush=True)
-            reports.append(
-                await probe_model(llm, models, model, listed=model in available, trials=args.trials)
+            report = await probe_model(
+                llm, models, model, listed=model in available, trials=args.trials
             )
+            reports.append(report)
+            # Results are kept as they arrive, so an interrupted run still reports what it found.
+            _write_report(path, reports)
+            _print_row(report)
     finally:
         await http.aclose()
-    _print_table(reports)
-    output = settings.root / "runs" / "probe"
-    output.mkdir(parents=True, exist_ok=True)
-    path = output / f"probe-{datetime.now(UTC):%Y%m%dT%H%M%SZ}.json"
-    path.write_text(
-        json.dumps([r.model_dump() for r in reports], indent=2, ensure_ascii=False), "utf-8"
-    )
-    print(f"\nReport written to {Path(path).as_posix()}")
+    print(f"Report written to {path.as_posix()}")
     return 0
 
 

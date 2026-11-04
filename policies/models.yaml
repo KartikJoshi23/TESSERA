@@ -20,42 +20,38 @@ rate_limit:
 decoding:
   temperature: 0
   seed: 20261103
-  max_tokens: 8192
+  max_tokens: 16384
 
 limits:
   tool_calls_per_turn: 8
   repair_attempts: 1
   requests_per_case: 80
 
-# Working choices, listed on NVIDIA's /v1/models on 2026-11-04. `tessera-probe` confirms them, and
-# the final choice is recorded in ADR-0004 before any test-set run.
+# Chosen from what this account can actually reach, on 2026-11-04 (results in ADR-0004).
+# NVIDIA lists more models than it serves to an account, so a listed model can still return 404.
 roles:
-  primary: nvidia/nemotron-3-super-120b-a12b
+  primary: nvidia/nemotron-3.5-super-vl-120b-a12b
   capability_arm: nvidia/nemotron-3.5-lightning-30b-a3b
   larger_single: nvidia/nemotron-3-ultra-550b-a55b
-  paraphrase: google/gemma-4-31b-it
+  paraphrase: mistralai/mistral-large-4-1t-a52b
 
+# What `tessera-probe` measures by default. Pass --models to try anything else.
 candidates:
   primary:
-    - nvidia/nemotron-3-super-120b-a12b
     - nvidia/nemotron-3.5-super-vl-120b-a12b
-    - moonshotai/kimi-k2.6
   capability_arm:
     - nvidia/nemotron-3.5-lightning-30b-a3b
-    - nvidia/nemotron-nano-3-30b-a3b
   larger_single:
     - nvidia/nemotron-3-ultra-550b-a55b
     - mistralai/mistral-large-4-1t-a52b
   paraphrase:
-    - google/gemma-4-31b-it
-    - openai/gpt-oss-20b
-    - z-ai/glm-5.3-flash
+    - mistralai/mistral-large-4-1t-a52b
     - deepseek-ai/deepseek-v4.1-flash
 
-# Provider-specific request fields, per model.
+# Provider-specific request fields, per model. Reasoning is on by default for the primary model.
+# It is stated here so that a change of default cannot alter a run unnoticed.
 model_options:
-  nvidia/nemotron-3-super-120b-a12b:
+  nvidia/nemotron-3.5-super-vl-120b-a12b:
     extra_body:
       chat_template_kwargs:
         enable_thinking: true
-      reasoning_budget: 4096

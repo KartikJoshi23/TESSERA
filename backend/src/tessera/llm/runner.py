@@ -236,7 +236,8 @@ class AgentRunner:
             self._board.record(
                 "agent.repair", spec.agent_id, {"round": round, "problems": problems[:3]}
             )
-            messages.append(_assistant_message(response))
+            # Any tool calls here went unanswered, and a provider rejects those in a history.
+            messages.append({"role": "assistant", "content": strip_reasoning(response.content)})
             messages.append({"role": "user", "content": _repair_request(problems)})
 
 

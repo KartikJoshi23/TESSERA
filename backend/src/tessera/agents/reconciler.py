@@ -6,6 +6,8 @@ every resolution must cite a precedence rule, so it cannot overrule evidence by 
 
 from __future__ import annotations
 
+# A finding's assertion is a union. Findings are picked by type first, so attributes are safe.
+# mypy: disable-error-code="union-attr"
 from contextlib import suppress
 from dataclasses import replace
 from typing import Any
@@ -19,13 +21,15 @@ from tessera.agents.schemas import (
 from tessera.blackboard.views import reconciler_view
 from tessera.llm.prompts import render_decision_policy, render_rule_cards
 from tessera.llm.runner import AgentSpec
+from tessera.protocol.claims import needs_evidence
 from tessera.protocol.common import AgentId, ResultCode, clip_words
 from tessera.protocol.messages import ProtocolViolation
 from tessera.protocol.results import ProposedResult, RegulatorCoverage, ResultClaim
 
 _HARD_CONFLICTS = {f"HC{i}" for i in range(1, 7)}
-_UNVERIFIED_REASONS = {f"U{i}" for i in range(1, 9)}
 _CLAIM_WORDS = 40
+#: Tasks that use the conversational prompt and output, and so write no proposal.
+_ROUND_TASKS = ("challenge_round", "remediate")
 
 
 class ReconcilerAgent(Agent):
@@ -33,13 +37,11 @@ class ReconcilerAgent(Agent):
     output_model = ReconcilerSynthesisOutput
 
     def spec(self, env: AgentEnv, task: Task) -> AgentSpec:
-        model = (
-            ReconcilerRoundOutput if task.kind == "challenge_round" else ReconcilerSynthesisOutput
-        )
+        model = ReconcilerRoundOutput if task.kind in _ROUND_TASKS else ReconcilerSynthesisOutput
         return replace(super().spec(env, task), output_model=model)
 
     def prompt_parts(self, env: AgentEnv, task: Task) -> tuple[str, ...]:
-        role = "reconciler_round" if task.kind == "challenge_round" else "reconciler_synthesis"
+        role = "reconciler_round" if task.kind in _ROUND_TASKS else "reconciler_synthesis"
         return (
             "_shared",
             role,
@@ -53,6 +55,16 @@ class ReconcilerAgent(Agent):
     def task_text(self, task: Task) -> str:
         if task.kind == "challenge_round":
             return "Deal with every open conflict: resolve it now, or ask the agent concerned."
+        if task.kind == "remediate":
+            return (
+                "The Verifier vetoed the proposal: read the VETO in `messages`. If fixing it needs "
+                "a lookup or a correction from an agent, ask now. Otherwise return empty lists."
+            )
+        if task.revision:
+            return (
+                "The Verifier vetoed the proposal: read the VETO in `messages`. Fix every reason "
+                "it gives, then write the proposed result again."
+            )
         return "Resolve what is still open, then write the proposed result."
 
     def check_output(self, env: AgentEnv, task: Task, output: Any) -> list[str]:
@@ -71,11 +83,8 @@ class ReconcilerAgent(Agent):
             for c in output.hard_conflicts
             if c not in _HARD_CONFLICTS
         ]
-        problems += [
-            f"unknown reason {u!r}"
-            for u in output.unverified_reasons
-            if u not in _UNVERIFIED_REASONS
-        ]
+        reasons = {rule.id for rule in env.decision.unverified_reasons}
+        problems += [f"unknown reason {u!r}" for u in output.unverified_reasons if u not in reasons]
         if output.result is ResultCode.CONFLICTS and not output.hard_conflicts:
             problems.append("CONFLICTS needs at least one hard conflict")
         if output.result is ResultCode.UNVERIFIED and not output.unverified_reasons:
@@ -122,6 +131,17 @@ class ReconcilerAgent(Agent):
         env.board.post_proposal(self._proposal(env, task, output))
         return []
 
+    @staticmethod
+    def _was_checked(env: AgentEnv, regulator: str) -> bool:
+        """True only if the regulator is covered and its check really ran."""
+        board = env.board
+        gap = any(
+            f.assertion.regulator == regulator and f.assertion.scope == "regulator"
+            for f in board.live_findings("coverage_gap")
+        )
+        failed = any(failure["agent"] == regulator for failure in board.failures)
+        return regulator in env.covered_regulators and not gap and not failed
+
     def _proposal(
         self, env: AgentEnv, task: Task, output: ReconcilerSynthesisOutput
     ) -> ProposedResult:
@@ -131,6 +151,9 @@ class ReconcilerAgent(Agent):
             finding = board.findings[item.finding_id]
             if not finding.is_live:
                 board.log_rejection("claim_on_dead_finding", item.finding_id, self.agent_id)
+                continue
+            # The Verifier would rightly call this unsupported. Coverage is reported separately.
+            if not finding.evidence_ids and not needs_evidence(finding.assertion):
                 continue
             claims.append(
                 ResultClaim(
@@ -151,7 +174,7 @@ class ReconcilerAgent(Agent):
                 RegulatorCoverage(
                     regulator=item.regulator,
                     relevance=item.status,
-                    checked=item.regulator in env.covered_regulators,
+                    checked=self._was_checked(env, item.regulator),
                     rationale=clip_words(item.rationale),
                 )
                 for item in output.relevant_regulators

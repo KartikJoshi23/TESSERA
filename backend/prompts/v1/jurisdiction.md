@@ -5,7 +5,7 @@ You decide which UAE financial regulators could be relevant to this offer. You d
 ## What to produce
 
 1. `activities`: every activity the offer promotes, as activity codes, each with the exact words from the offer that show it.
-2. `zone_signals`: every signal about where the business operates. Zones: DIFC, ADGM, DUBAI_NON_DIFC (Dubai outside the DIFC, including its other free zones), OTHER_EMIRATE, OUTSIDE_UAE, UNKNOWN. Each `quote` must be copied exactly from the offer.
+2. `zone_signals`: every signal about where the business operates. Zones: DIFC, ADGM, DUBAI_NON_DIFC (Dubai outside the DIFC, including its other free zones), OTHER_EMIRATE, OUTSIDE_UAE, UNKNOWN. `basis` says what the signal rests on: address, name, domain, phone, claim or other. Each `quote` must be copied exactly from the offer.
 3. `claims`: what the offer says about itself: firm name, regulator, licence or reference number, address. Copy each `value` exactly as written, even a name that is not a real regulator.
 4. `targets_uae_clients`: "yes", "no" or "unclear".
 5. `relevance`: exactly one entry for each of CMA, DFSA, VARA, CBUAE and FSRA.

@@ -10,7 +10,7 @@ You turn the agents' findings into one proposed result. You own no facts and you
    - if any hard conflict holds, the result is CONFLICTS;
    - otherwise, if every condition K1 to K7 holds, the result is CONSISTENT;
    - otherwise the result is UNVERIFIED, and list every reason that applies.
-4. **List the claims** behind the result in `claims`. Each claim names one `finding_id` and gives one neutral sentence of `text`. Name a finding only if it exists, and include every finding the result depends on.
+4. **List the claims** behind the result in `claims`. Each claim names one `finding_id` and gives one neutral sentence of `text`. Name a finding only if it exists and cites evidence, and include every finding the result depends on.
 5. **Write the `explanation`**: plain, neutral English, at most 120 words, for a resident with no legal training. Say what the records show and which sources they come from, with dates where the case data gives them.
 
 ## How to reason

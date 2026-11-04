@@ -216,6 +216,21 @@ def test_the_tool_limit_forces_a_final_answer(harness):
     assert "tools" not in final and "used all your tool calls" in final["messages"][-1]["content"]
 
 
+def test_a_repair_never_leaves_an_unanswered_tool_call_in_the_history(harness):
+    """After the tool limit, a stray tool call must not reach the provider unanswered."""
+    limits = LimitsConfig(tool_calls_per_turn=1, repair_attempts=1, requests_per_case=9)
+    setup = harness(
+        OFFER,
+        tool_reply(("dfsa_facts_lookup", {"frn": "F000000"})),
+        tool_reply(("dfsa_facts_lookup", {"frn": "F000000"})),
+        json_reply({"answer": "done"}),
+    )
+    assert run(setup, limits=limits).ok
+    calls = [m for m in setup.transport.payloads[-1]["messages"] if m.get("tool_calls")]
+    answers = [m for m in setup.transport.payloads[-1]["messages"] if m["role"] == "tool"]
+    assert len(calls) == len(answers) == 1
+
+
 def test_the_request_budget_stops_a_case(harness):
     setup = harness(OFFER, tool_reply(("dfsa_facts_lookup", {"frn": "F000000"})))
     runner = runner_for(setup)

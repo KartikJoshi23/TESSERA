@@ -321,6 +321,14 @@ class Blackboard:
         if kind is Performative.INFORM:
             if not draft.refs and draft.in_reply_to is None:
                 self._reject("inform_without_content", "INFORM names no finding", sender)
+            if draft.in_reply_to is not None:
+                original = self.message(draft.in_reply_to)
+                if (
+                    original is None
+                    or sender not in original.recipients
+                    or original.performative is not Performative.REQUEST
+                ):
+                    self._reject("bad_reply", "an INFORM reply answers a REQUEST", sender)
         elif kind is Performative.REQUEST:
             if len(draft.recipients) != 1 or not draft.body.get("question"):
                 self._reject("bad_request", "a REQUEST has one recipient and a question", sender)
@@ -426,6 +434,10 @@ class Blackboard:
             for c in self.conflicts.values()
             if c.status in (ConflictStatus.OPEN, ConflictStatus.CHALLENGED)
         ]
+
+    def settle_conflict(self, conflict_id: str, *, round: int = 0) -> None:
+        """Close a conflict whose trigger no longer holds. Only the detector does this."""
+        self._emit("conflict.settled", AgentId.ORC, {"conflict_id": conflict_id, "round": round})
 
     def resolve_conflict(
         self,
@@ -590,6 +602,13 @@ def _on_resolution(board: Blackboard, event: Event) -> None:
     )
 
 
+def _on_settled(board: Blackboard, event: Event) -> None:
+    conflict_id = event.payload["conflict_id"]
+    board.conflicts[conflict_id] = board.conflicts[conflict_id].model_copy(
+        update={"status": ConflictStatus.SETTLED}
+    )
+
+
 def _on_proposal(board: Blackboard, event: Event) -> None:
     board.proposals.append(ProposedResult.model_validate(event.payload))
 
@@ -618,6 +637,7 @@ _APPLIERS: dict[str, Callable[[Blackboard, Event], None]] = {
     "message.sent": _on_message,
     "conflict.detected": _on_conflict,
     "conflict.resolved": _on_resolution,
+    "conflict.settled": _on_settled,
     "proposal.created": _on_proposal,
     "verifier.decision": _on_verifier,
     "result.finalized": _on_final,

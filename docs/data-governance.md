@@ -116,6 +116,9 @@ Models run on NVIDIA's free API catalog, whose free endpoints may record inputs 
   short terms, never with copied DFSA text;
 - no personal data is ever used.
 
+A DFSA alert's date appears only in a report, built on demand in `RESEARCH_INTERNAL` mode. It is
+never sent to a model, and never written to the event log.
+
 ## 6. Purge procedure
 
 To remove all DFSA data: delete `data/restricted/` and `datasets/restricted/`. Nothing else holds

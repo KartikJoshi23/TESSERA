@@ -32,9 +32,9 @@ The full design is in [implementation-plan.md](implementation-plan.md).
 | Part | Scope | State |
 |---|---|---|
 | 1 | Governance, data layer, deterministic tools | ✅ Done |
-| 2 | Protocol, blackboard, LLM runner, the seven agents | Built and tested offline; live runs need a key |
-| 3 | Crew orchestration, reconciliation, Verifier, streaming API | Next |
-| 4 | Single-agent baselines and ablations | Planned |
+| 2 | Protocol, blackboard, LLM runner, the seven agents | ✅ Done |
+| 3 | Crew orchestration, reconciliation, Verifier, streaming API | ✅ Done |
+| 4 | Single-agent baselines and ablations | Next |
 | 5 | Frontend (Orchestration Theater) | Planned |
 | 6 | Datasets, evaluation harness, pilot | Planned |
 | 7 | Experiments and analysis | Planned |
@@ -94,32 +94,44 @@ uv run tessera-ingest cma_licensed ../data/inbox/cma_licensed/export.xlsx --retr
 ## Running against a live model
 
 Tests never need a key or a network. Live runs need one free key from
-[build.nvidia.com](https://build.nvidia.com), in `.env` at the repository root:
+[build.nvidia.com](https://build.nvidia.com). You need one key, not one per model.
 
-```bash
-NVIDIA_API_KEY=<your key>
-```
+Copy `.env.example` to a new file named `.env` at the repository root, and put the key in that
+copy. `.env.example` is public, so never paste a key there. The commit guard blocks it if you do.
 
 Then, from `backend/`:
 
-```bash
-uv run tessera-probe --trials 2 --models nvidia/nemotron-3-super-120b-a12b
-```
+| Command | What it does |
+|---|---|
+| `uv run tessera-run --case S09` | Runs one fictional offer through the crew and prints its report |
+| `uv run tessera-smoke --limit 3` | Runs fictional cases and compares them with their gold results |
+| `uv run tessera-probe` | Measures tool calling and JSON output for the candidate models |
+| `uv run tessera-api --fiction` | Starts the local API on `127.0.0.1:8000`, on the fictional world |
 
-```bash
-uv run tessera-probe
-```
+- Models listed by NVIDIA are not all served to every account. A `404 ... Not found for account`
+  means this account cannot use that model. `tessera-probe` shows which ones work.
+- `tessera-probe` writes its report to `runs/probe/` as it goes. With no arguments it runs 40
+  trials on every candidate in `policies/models.yaml`, one request at a time, which takes a while.
+- `tessera-smoke` works in its own folder under `runs/smoke/` and stops at a request cap (120 by
+  default). Its results say nothing about final performance.
+- `tessera-run --text "..." --attest-synthetic` runs your own synthetic text. Real messages are
+  never allowed.
 
-```bash
-uv run tessera-smoke --limit 3
-```
+## The local API
 
-- `tessera-probe` measures tool calling and JSON output for the candidate models in
-  `policies/models.yaml`, and writes a report to `runs/probe/`. With no arguments it runs 40
-  trials on each candidate, which takes a while.
-- `tessera-smoke` runs the crew on the fictional cases in `eval/smoke/`, in its own data folder
-  under `runs/smoke/`, and stops at a request cap (120 by default). It makes one pass with no
-  challenge rounds until Part 3 adds them. Its results say nothing about final performance.
+`tessera-api` binds to `127.0.0.1` only, and has no sign-in because it serves this machine alone.
+Without `--fiction` it uses the data in `data/`.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/status` | Mode, model, covered regulators and what data is loaded |
+| `GET /api/examples` | The fictional offers |
+| `POST /api/cases` | Starts a case. Anything not marked synthetic is refused |
+| `GET /api/cases/{id}/events` | Every event of a case in order, live or replayed, as Server-Sent Events |
+| `GET /api/cases/{id}/report` | The finished report |
+| `GET /api/cases/{id}` | The full masked case state |
+
+Interactive documentation is at `/api/docs`.
 
 ## Free by design
 

@@ -70,12 +70,13 @@ class EventStore:
             self._conn.commit()
         return event.model_copy(update={"seq": cursor.lastrowid})
 
-    def read(self, case_id: str) -> list[Event]:
+    def read(self, case_id: str, *, after: int = 0) -> list[Event]:
+        """A case's events in order, optionally only those after sequence number ``after``."""
         with self._lock:
             rows = self._conn.execute(
                 "SELECT seq, case_id, ts, actor, type, payload, usage, latency_ms "
-                "FROM events WHERE case_id = ? ORDER BY seq",
-                (case_id,),
+                "FROM events WHERE case_id = ? AND seq > ? ORDER BY seq",
+                (case_id, after),
             ).fetchall()
         return [
             Event(

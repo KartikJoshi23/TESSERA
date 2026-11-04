@@ -17,7 +17,7 @@ hard_conflicts:
   - id: HC4
     text: The matched licence does not cover the offered activity under the competent regulator's scope rule.
   - id: HC5
-    text: A deciding contact point imitates the official domain, or differs from a legitimate contact the regulator itself states.
+    text: A deciding contact point imitates the official domain, or differs from an official contact the regulator itself states.
   - id: HC6
     text: The payment beneficiary differs from the claimed firm's registered legal name.
 
@@ -54,6 +54,8 @@ unverified_reasons:
     text: Tool, data or model failure; stale snapshot; or request budget used up.
   - id: U8
     text: The named regulator is not a UAE financial regulator.
+  - id: U9
+    text: A matched entry could not be confirmed as the competent regulator's active licence for the offered activity.
 
 precedence:
   - id: P1
@@ -70,6 +72,17 @@ precedence:
     text: More recent dated records govern; staleness is disclosed.
   - id: P7
     text: Unresolved after limits means the most cautious result the evidence supports; never CONSISTENT.
+
+# Names an offer may use for a UAE financial regulator, lower-case, without a leading "the".
+# A regulator claim that matches none of these is reason U8.
+regulator_names:
+  CMA: [cma, capital market authority, capital markets authority, sca,
+        securities and commodities authority]
+  DFSA: [dfsa, dubai financial services authority]
+  VARA: [vara, virtual assets regulatory authority]
+  CBUAE: [cbuae, central bank of the uae, central bank of the united arab emirates,
+          uae central bank]
+  FSRA: [fsra, adgm fsra, financial services regulatory authority]
 
 # Which contact details can decide a result (§4.7).
 contact_roles:

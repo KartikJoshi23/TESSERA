@@ -1,16 +1,11 @@
-"""Assembles the crew and its per-case environment.
-
-:func:`run_sequence` is a simple one-pass driver: every agent runs once, with no challenge rounds.
-It is what smoke runs use until Part 3 adds the full orchestration graph.
-"""
+"""Assembles the crew and its per-case environment."""
 
 from __future__ import annotations
 
-import asyncio
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from tessera.agents.base import Agent, AgentEnv, Task
+from tessera.agents.base import Agent, AgentEnv
 from tessera.agents.clone_check import CloneCheckAgent
 from tessera.agents.jurisdiction import JurisdictionAgent
 from tessera.agents.reconciler import ReconcilerAgent
@@ -22,15 +17,22 @@ from tessera.blackboard.store import EventStore
 from tessera.config.settings import Settings
 from tessera.data.registry import DataRegistry
 from tessera.governance.masking import MaskingGateway
-from tessera.governance.policies import UAE_REGULATORS, SourcesPolicy, load_decision_policy
+from tessera.governance.policies import (
+    UAE_REGULATORS,
+    SourcesPolicy,
+    load_decision_policy,
+    load_language_policy,
+    load_sources_policy,
+)
 from tessera.governance.synthetic_gate import OfferInput
 from tessera.knowledge import load_activity_taxonomy, load_rule_cards
 from tessera.llm.client import GuardedLLM
 from tessera.llm.config import ModelsPolicy, load_models_policy
 from tessera.llm.prompts import PromptLibrary
-from tessera.llm.runner import AgentRunner, TurnResult, UsageMeter
+from tessera.llm.runner import AgentRunner, UsageMeter
+from tessera.llm.types import ChatTransport
 from tessera.protocol.case import SystemCondition
-from tessera.protocol.common import REGULATOR_AGENTS, AgentId
+from tessera.protocol.common import AgentId
 from tessera.tools import ToolContext
 
 
@@ -68,7 +70,7 @@ def open_case_env(
     llm: GuardedLLM,
     case_id: str,
     offer: OfferInput,
-    condition: SystemCondition = SystemCondition.CREW_SHARE,
+    condition: SystemCondition = SystemCondition.CREW_FULL,
     model: str | None = None,
     models: ModelsPolicy | None = None,
 ) -> AgentEnv:
@@ -106,31 +108,66 @@ def open_case_env(
         rule_cards=load_rule_cards(settings.knowledge_dir),
         taxonomy=load_activity_taxonomy(settings.knowledge_dir),
         decision=load_decision_policy(settings.policies_dir),
+        language=load_language_policy(settings.policies_dir),
         covered_regulators=covered_regulators(ctx.sources, settings),
     )
 
 
-async def run_sequence(env: AgentEnv, crew: dict[AgentId, Agent] | None = None) -> list[TurnResult]:
-    """One pass through the crew: Jurisdiction, regulators in parallel, Clone-check, Reconciler,
-    Verifier. Part 3 replaces this with challenge rounds and the veto loop."""
-    agents = crew or build_crew()
-    results: list[TurnResult] = [await agents[AgentId.JUR].activate(env, Task("initial", round=0))]
-    regulators: list[Any] = [
-        agents[agent].activate(env, Task("initial", round=1)) for agent in REGULATOR_AGENTS
-    ]
-    results += await asyncio.gather(*regulators)
-    results.append(await agents[AgentId.CLN].activate(env, Task("initial", round=2)))
-    results.append(await agents[AgentId.REC].activate(env, Task("synthesis", round=3)))
-    if env.board.proposals:
-        results.append(await agents[AgentId.VER].activate(env, Task("verify", round=4)))
-    return results
+@dataclass
+class CrewStack:
+    """What every case in one process shares. Each case gets its own environment from it."""
+
+    settings: Settings
+    registry: DataRegistry
+    gateway: MaskingGateway
+    llm: GuardedLLM
+    store: EventStore
+    models: ModelsPolicy
+
+    def open_case(
+        self,
+        case_id: str,
+        offer: OfferInput,
+        *,
+        condition: SystemCondition = SystemCondition.CREW_FULL,
+        model: str | None = None,
+    ) -> AgentEnv:
+        return open_case_env(
+            store=self.store,
+            settings=self.settings,
+            registry=self.registry,
+            gateway=self.gateway,
+            llm=self.llm,
+            case_id=case_id,
+            offer=offer,
+            condition=condition,
+            model=model,
+            models=self.models,
+        )
+
+
+def build_stack(
+    settings: Settings, transport: ChatTransport, store: EventStore, models: ModelsPolicy
+) -> CrewStack:
+    """Load the data this mode allows, and put the masking gateway in front of the model."""
+    registry = DataRegistry(settings, load_sources_policy(settings.policies_dir))
+    gateway = MaskingGateway(registry.restricted_values())
+    return CrewStack(
+        settings=settings,
+        registry=registry,
+        gateway=gateway,
+        llm=GuardedLLM(transport, gateway),
+        store=store,
+        models=models,
+    )
 
 
 __all__ = [
     "Blackboard",
+    "CrewStack",
     "build_crew",
+    "build_stack",
     "covered_regulators",
     "open_case_env",
     "prompt_library",
-    "run_sequence",
 ]

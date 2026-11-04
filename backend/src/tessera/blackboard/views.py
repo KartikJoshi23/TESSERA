@@ -32,6 +32,8 @@ FactsFor = Callable[[EvidenceRecord], dict[str, Any]]
 class ViewOptions:
     #: False is the CREW-SILO ablation: no agent sees another agent's findings.
     share: bool = True
+    #: False drops agents' requests and challenges, for conditions with no challenge rounds.
+    messages: bool = True
 
 
 SHARED = ViewOptions()

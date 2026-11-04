@@ -22,6 +22,7 @@ from tessera.protocol.claims import (
     Relevance,
 )
 from tessera.protocol.common import AgentId, Regulator, clip_words
+from tessera.protocol.evidence import REGISTER_SOURCES
 
 
 class RegulatorAgent(Agent):
@@ -120,7 +121,11 @@ class RegulatorAgent(Agent):
                 depends_on=(match_id,),
             )
         for evidence_id in output.no_match_evidence_ids:
-            post(RegisterNoMatch(regulator=self.regulator), [evidence_id])
+            # A no-match on a warnings list stays on the board as evidence, but says nothing
+            # about the register. An invented ID is kept, so that conflict C6 can flag it.
+            record = board.evidence.get(evidence_id)
+            if record is None or record.source_id in REGISTER_SOURCES:
+                post(RegisterNoMatch(regulator=self.regulator), [evidence_id])
         for scope in output.scope:
             rule_ids = [scope.rule_id] if scope.rule_id else []
             post(
@@ -151,20 +156,24 @@ class RegulatorAgent(Agent):
         if task.kind == "initial" and not self._records_consulted(env):
             board.post_finding(
                 AgentId.ORC,
-                CoverageGap(regulator=self.regulator, reason="records were not available"),
+                CoverageGap(regulator=self.regulator, reason="not every list was consulted"),
                 round=r,
             )
         self.handle_conversation(env, task, output)
         return posted
 
     def _records_consulted(self, env: AgentEnv) -> bool:
-        """Deterministic: did any of this regulator's sources actually produce evidence?"""
+        """Deterministic: did every source of this regulator actually produce evidence?
+
+        A lookup always mints evidence, even for no match, so a source with none was not checked.
+        One skipped list is enough to count: a warning nobody read cannot block a result.
+        """
         sources = {
             source_id
             for source_id, policy in env.ctx.sources.sources.items()
-            if policy.regulator == self.regulator
+            if policy.regulator == self.regulator and policy.enabled
         }
-        return any(record.source_id in sources for record in env.board.evidence.values())
+        return sources <= {record.source_id for record in env.board.evidence.values()}
 
 
 def build_regulator_agents() -> dict[AgentId, RegulatorAgent]:

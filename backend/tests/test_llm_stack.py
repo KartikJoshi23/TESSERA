@@ -298,7 +298,15 @@ def test_model_policy_loads_and_every_role_is_a_candidate():
     for role, model in policy.roles.items():
         assert model in policy.candidates[role]
     assert policy.decoding.temperature == 0
-    assert policy.options_for("nvidia/nemotron-3-super-120b-a12b")
+    assert policy.options_for(policy.roles["primary"])
+
+
+def test_thinking_can_be_overridden_for_a_comparison():
+    policy = load_models_policy(POLICIES)
+    primary = policy.roles["primary"]
+    off = policy.with_thinking(False)
+    assert off.options_for(primary)["chat_template_kwargs"] == {"enable_thinking": False}
+    assert policy.options_for(primary)["chat_template_kwargs"] == {"enable_thinking": True}
 
 
 def test_a_clear_message_when_the_key_is_missing(tmp_path, monkeypatch):

@@ -610,6 +610,7 @@ def dfsa_facts_lookup(
     if alerts.available:
         labels: dict[str, set[str]] = {}
         records: dict[str, Any] = {}
+        name_hits: dict[str, _Hit] = {}
         for r in _typed(alerts, DfsaAlertFact):
             matched: set[str] = set()
             if frn and _norm_ref(r.frn_named) == _norm_ref(frn):
@@ -624,18 +625,21 @@ def dfsa_facts_lookup(
             for hit in _name_hits(ctx, alerts, name, label="firm_named"):
                 labels.setdefault(hit.record.record_id, set()).add("firm_named")
                 records[hit.record.record_id] = hit.record
+                name_hits[hit.record.record_id] = hit
         for record_id in sorted(labels):
             r = records[record_id]
             matched_on = ",".join(sorted(labels[record_id]))
+            # Anything but a name is an exact match. A name alone is only as good as its match.
+            by_name = name_hits[record_id] if labels[record_id] == {"firm_named"} else None
             ev = _restricted_evidence(
                 ctx,
                 alerts,
                 tool,
                 EvidenceKind.ALERT_ENTRY,
                 r,
-                match_type="exact",
+                match_type=by_name.match_type if by_name else "exact",
                 matched_on=matched_on,
-                score=100.0,
+                score=by_name.score if by_name else 100.0,
                 record_kind="alert",
             )
             evidence.append(ev)
@@ -644,6 +648,7 @@ def dfsa_facts_lookup(
                     "evidence_id": ev.evidence_id,
                     "record_ref": ev.restricted_ref,
                     **_dfsa_alert_facts(r),
+                    "match_type": by_name.match_type if by_name else "exact",
                     "matched_on": matched_on,
                 }
             )

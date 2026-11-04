@@ -157,3 +157,13 @@ Assertion = Annotated[
 ]
 
 ASSERTION_ADAPTER: TypeAdapter[Assertion] = TypeAdapter(Assertion)
+
+#: Judgements and absences. They state no fact from a record, so they have nothing to cite.
+_NOTHING_TO_CITE = frozenset({"coverage_gap", "targeting", "relevance"})
+
+
+def needs_evidence(assertion: Assertion) -> bool:
+    """False for an assertion with no record to cite, such as a contact with no comparison."""
+    if isinstance(assertion, ContactAssessment):
+        return assertion.status != "not_comparable"
+    return assertion.type not in _NOTHING_TO_CITE

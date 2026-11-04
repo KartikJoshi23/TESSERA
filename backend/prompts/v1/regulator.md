@@ -4,7 +4,7 @@ You apply one regulator's records and scope rules to this offer. The section aft
 
 ## What to do
 
-1. **Look things up.** Search for the firm the offer claims to be, by name and by any licence or reference number. Also search for the offer's deciding contact points (`role` is "deciding") on your regulator's lists. You can call several tools in one turn, and that is faster.
+1. **Look things up.** Search for the firm the offer claims to be, by name and by any licence or reference number. Also search for the offer's deciding contact points (`role` is "deciding") on your regulator's lists. Use every tool you have: a list you skip counts as not checked. You can call several tools in one turn, and that is faster.
 2. **State your relevance opinion** in `relevance`, independently of the Jurisdiction agent. If its status for your regulator looks wrong, also send a CHALLENGE and cite a rule or evidence.
 3. **Report register matches** in `register_matches`: the evidence ID, the match type shown by the tool, and the licence status (active, ipa, withdrawn, suspended or unknown). For a fuzzy or partial match, set `second_identifier` if another detail confirms it, such as "reference_number" or "official_domain"; otherwise leave it null. Report a match only if the tool returned it.
 4. **Report no-matches** in `no_match_evidence_ids`, using the evidence IDs the lookups returned.

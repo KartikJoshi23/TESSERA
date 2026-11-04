@@ -28,6 +28,9 @@ class EvidenceKind(StrEnum):
     DERIVED_ANALYSIS = "derived_analysis"
 
 
+#: The sources that say whether a firm is licensed, as opposed to lists of warnings.
+REGISTER_SOURCES = frozenset({"cma_licensed", "vara_register", "dfsa_register"})
+
 #: Field names allowed in evidence from restricted sources: derived, non-identifying data only.
 RESTRICTED_SAFE_FIELDS = frozenset(
     {

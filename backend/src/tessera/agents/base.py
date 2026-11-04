@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -13,7 +14,7 @@ from tessera.agents.schemas import OutgoingItem, ResponseItem
 from tessera.agents.toolbelt import ToolBelt
 from tessera.blackboard.board import Blackboard
 from tessera.blackboard.views import SHARED, ViewOptions
-from tessera.governance.policies import DecisionPolicy
+from tessera.governance.policies import DecisionPolicy, LanguagePolicy
 from tessera.knowledge import ActivityTaxonomy, RuleCard
 from tessera.llm.prompts import PromptLibrary
 from tessera.llm.runner import AgentRunner, AgentSpec, TurnResult
@@ -21,10 +22,13 @@ from tessera.protocol.claims import ASSERTION_ADAPTER
 from tessera.protocol.common import AgentId, clip_words
 from tessera.protocol.evidence import EvidenceKind, EvidenceRecord, mint_evidence
 from tessera.protocol.messages import MessageDraft, Performative, ProtocolViolation
+from tessera.protocol.results import GateResult
 from tessera.tools import ToolContext, get_rule_card
 from tessera.tools.lookups import restricted_facts_for
 
-TaskKind = Literal["initial", "respond", "challenge_round", "synthesis", "verify"]
+#: The offer cannot close its own tag, in any spelling a model would still read as closing it.
+_OFFER_TAG = re.compile(r"<\s*/?\s*offer_text[^>]*>", re.IGNORECASE)
+TaskKind = Literal["initial", "respond", "challenge_round", "synthesis", "remediate", "verify"]
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,12 @@ class Task:
     kind: TaskKind
     round: int = 0
     options: ViewOptions = SHARED
+    #: For synthesis: the Verifier vetoed the last proposal, so this one replaces it.
+    revision: bool = False
+    #: For the Verifier: the results of the deterministic gates, which all passed.
+    gates: tuple[GateResult, ...] = ()
+    #: For the Verifier: the proposal is more cautious than the policy requires.
+    under_call: bool = False
 
 
 @dataclass
@@ -46,6 +56,7 @@ class AgentEnv:
     rule_cards: dict[str, RuleCard]
     taxonomy: ActivityTaxonomy
     decision: DecisionPolicy
+    language: LanguagePolicy
     #: Regulators whose records can be consulted in this phase and mode.
     covered_regulators: frozenset[str]
 
@@ -92,7 +103,7 @@ class AgentEnv:
 def render_user_content(board: Blackboard, case_data: dict[str, Any], task_text: str) -> str:
     """The per-case message. Offer text stays inside its own tag, marked as untrusted data."""
     assert board.case is not None
-    offer = board.case.offer_text.replace("</offer_text>", "")
+    offer = _OFFER_TAG.sub("", board.case.offer_text)
     data = json.dumps(case_data, ensure_ascii=False, indent=1, default=str)
     return (
         f"<offer_text>\n{offer}\n</offer_text>\n\n"
@@ -178,8 +189,9 @@ class Agent:
     def handle_conversation(self, env: AgentEnv, task: Task, output: Any) -> None:
         for item in output.responses:
             self._respond(env, task, item)
-        for item in output.outgoing:
-            send_outgoing(env, self.agent_id, item, task.round)
+        if task.options.messages:
+            for item in output.outgoing:
+                send_outgoing(env, self.agent_id, item, task.round)
 
     def _respond(self, env: AgentEnv, task: Task, item: ResponseItem) -> None:
         board = env.board

@@ -71,6 +71,13 @@ class ModelsPolicy(_Frozen):
         options = self.model_options.get(model)
         return dict(options.extra_body) if options else {}
 
+    def with_thinking(self, enabled: bool) -> ModelsPolicy:
+        """A copy with the primary model's reasoning switched on or off, for comparisons."""
+        primary = self.roles["primary"]
+        body = {**self.options_for(primary), "chat_template_kwargs": {"enable_thinking": enabled}}
+        options = {**self.model_options, primary: ModelOptions(extra_body=body)}
+        return self.model_copy(update={"model_options": options})
+
 
 @lru_cache(maxsize=8)
 def load_models_policy(policies_dir: Path) -> ModelsPolicy:

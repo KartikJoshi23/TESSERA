@@ -52,4 +52,4 @@ class ResultCode(StrEnum):
 def clip_words(text: str, limit: int = 60) -> str:
     """Shorten free text to ``limit`` words (message rationales are capped at 60)."""
     words = text.split()
-    return text.strip() if len(words) <= limit else " ".join(words[:limit]) + " …"
+    return text.strip() if len(words) <= limit else " ".join(words[:limit]) + "…"

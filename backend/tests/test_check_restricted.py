@@ -58,6 +58,8 @@ def test_dfsa_deep_links_are_blocked_but_the_homepage_is_fine():
 
 def test_api_keys_and_the_restricted_marker_are_blocked():
     assert guard.check_content("a.py", "key = 'nvapi-" + "A1b2" * 10 + "'")
+    # The example file is committed, so a key pasted there by mistake must be stopped too.
+    assert guard.check_content(".env.example", "NVIDIA_API_KEY=nvapi-" + "A1b2" * 10)
     assert guard.check_content("a.py", "token = 'ghp_" + "x" * 36 + "'")
     assert guard.check_content("a.txt", "TESSERA-RESTRICTED")
     assert guard.check_content("a.py", "NVIDIA_API_KEY=") == []

@@ -160,6 +160,7 @@ class DecisionPolicy(_Frozen):
     consistent_conditions: tuple[PolicyRule, ...]
     unverified_reasons: tuple[PolicyRule, ...]
     precedence: tuple[PolicyRule, ...]
+    regulator_names: dict[str, tuple[str, ...]]
     contact_roles: dict[str, ContactRoleName]
     thresholds: Thresholds
 
@@ -168,7 +169,7 @@ class DecisionPolicy(_Frozen):
         expected = {
             "hard_conflicts": [f"HC{i}" for i in range(1, 7)],
             "consistent_conditions": [f"K{i}" for i in range(1, 8)],
-            "unverified_reasons": [f"U{i}" for i in range(1, 9)],
+            "unverified_reasons": [f"U{i}" for i in range(1, 10)],
             "precedence": [f"P{i}" for i in range(1, 8)],
         }
         for field_name, ids in expected.items():
@@ -177,6 +178,8 @@ class DecisionPolicy(_Frozen):
                 raise ValueError(f"{field_name} must list {ids} in order, found {found}")
         if set(self.outcomes) != set(OUTCOME_CODES):
             raise ValueError(f"outcomes must define exactly {OUTCOME_CODES}")
+        if set(self.regulator_names) != UAE_REGULATORS:
+            raise ValueError(f"regulator_names must cover exactly {sorted(UAE_REGULATORS)}")
         return self
 
 

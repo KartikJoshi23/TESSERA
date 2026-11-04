@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Version** | 2. Audited and revised on 3 November 2026; Appendix E lists every finding and fix. |
-| **Status** | Approved to proceed on 3 Nov 2026. Part 1 (foundations) is delivered. Part 2 (protocol, blackboard, runner, the seven agents) is built and tested offline, and its live probe and live smoke run wait for the NVIDIA key. Parts 3–8 are pending, and each starts only after your "continue". |
+| **Status** | Approved to proceed on 3 Nov 2026. Part 1 (foundations) is delivered. Part 2 (protocol, blackboard, runner, the seven agents) and Part 3 (crew orchestration, Verifier, streaming API) are delivered. Parts 4–8 are pending, and each starts only after your "continue". |
 | **Budget** | **$0.** Every model, service and tool is free (§1.4). |
 | **Repository** | <https://github.com/KartikJoshi23/TESSERA> (public). Real data and `PS.md` never leave this machine (§12.7). |
 | **Problem** | `PS.md`, Problem 1 (finalized). Problem 2, the Part B audit logs and the dropped candidates are used only where they constrain Problem 1. |
@@ -218,7 +218,7 @@ The three results need precise, testable definitions. Otherwise neither the crew
 |---|---|---|
 | `CONSISTENT` | **Consistent with the official record** | All of K1–K7 (§4.3) hold, each backed by evidence |
 | `CONFLICTS` | **Conflicts with the official record** | At least one hard conflict from HC1–HC6 (§4.2) is backed by evidence |
-| `UNVERIFIED` | **Could not verify** | Everything else. The reasons U1–U8 are always listed |
+| `UNVERIFIED` | **Could not verify** | Everything else. The reasons U1–U9 are always listed |
 
 ### 4.2 Hard conflicts (any one gives `CONFLICTS`)
 
@@ -228,7 +228,7 @@ The three results need precise, testable definitions. Otherwise neither the crew
 | HC2 | The offer's named entity appears on an official warning or unlicensed list, by exact normalised name or a listed alias | List record plus match record | The entity is on VARA's Unlicensed VASPs list |
 | HC3 | The offer claims an authorisation (regulator, licence or reference number) that the register contradicts | Register record, or a recorded no-match on the claimed register | The claimed reference number belongs to another firm; a "licensed" claim for an entry that only holds In-Principle Approval |
 | HC4 | The matched licence does not cover the offered activity under the competent regulator's published scope rule | Register record plus rule card | A CMA Category 5 firm offering FX or CFD trading; a VARA IPA holder taking clients |
-| HC5 | A deciding contact point contradicts the official record for the claimed firm: it imitates the official domain, or it differs from a legitimate contact the regulator itself states | Official contact record plus similarity analysis | A look-alike of the registered website with an added word such as "capital" |
+| HC5 | A deciding contact point contradicts the official record for the claimed firm: it imitates the official domain, or it differs from an official contact the regulator itself states | Official contact record plus similarity analysis | A look-alike of the registered website with an added word such as "capital" |
 | HC6 | The payment beneficiary differs from the claimed firm's registered legal name | Payment analysis plus register record | "Deposit to XYZ General Trading" for a regulated broker |
 
 A firm that isn't found is **never** a conflict on its own (R18). It becomes HC3 only when the offer claims an authorisation that the register contradicts.
@@ -257,6 +257,7 @@ A firm that isn't found is **never** a conflict on its own (R18). It becomes HC3
 | U6 | A Verifier veto was not cleared after remediation. |
 | U7 | A tool, data or model failure; a snapshot older than the staleness threshold (60 days); or the case's request budget was used up. |
 | U8 | The named regulator is not a UAE financial regulator, so the claim cannot be checked. |
+| U9 | A matched entry could not be confirmed as the competent regulator's active licence for the offered activity: for example, scope is unknown, or the entry is not active and the offer made no claim about it. |
 
 ### 4.5 Precedence rules for resolving conflicts (P1–P7)
 
@@ -345,11 +346,11 @@ Tools are kept to the ones that need a model's judgement, because each call cost
 ### 5.3 Model configuration (free tier)
 
 - **Provider.** NVIDIA API catalog (build.nvidia.com), free trial tier, at `https://integrate.api.nvidia.com/v1` (OpenAI-compatible). One key is kept in `NVIDIA_API_KEY` in the local `.env`, which is never committed. **The key is first needed in Part 2.**
-- **Candidate models.** `policies/models.yaml` lists them, with IDs taken from `/v1/models` on 4 Nov 2026. Capability is confirmed by the Part 2 probe.
-  - *Primary:* `nvidia/nemotron-3-super-120b-a12b`, a mixture-of-experts model with 12B active parameters and a long context, recommended for tool calling. Alternatives: `nvidia/nemotron-3.5-super-vl-120b-a12b`, `moonshotai/kimi-k2.6`.
-  - *Capability arm:* a smaller model from the same family, `nvidia/nemotron-3.5-lightning-30b-a3b`. Alternative: `nvidia/nemotron-nano-3-30b-a3b`.
-  - *Synthetic paraphrase and the optional LLM judge:* a different family, so that generated data does not match the model under test: `google/gemma-4-31b-it`. Alternatives: `openai/gpt-oss-20b`, `z-ai/glm-5.3-flash`, `deepseek-ai/deepseek-v4.1-flash`.
-  - *SA-LARGER:* the largest tool-capable model on the catalog at probe time: `nvidia/nemotron-3-ultra-550b-a55b`. Alternative: `mistralai/mistral-large-4-1t-a52b`.
+- **Models.** `policies/models.yaml` holds the choices, and ADR-0004 holds the measurements. NVIDIA lists more models than it serves to an account, so a listed model can still return 404. The choices below are what this account can reach, as of 4 Nov 2026.
+  - *Primary:* `nvidia/nemotron-3.5-super-vl-120b-a12b`, a mixture-of-experts model with 12B active parameters. The planned `nvidia/nemotron-3-super-120b-a12b` is listed but returns 404 for this account.
+  - *Capability arm:* a smaller model from the same family, `nvidia/nemotron-3.5-lightning-30b-a3b`.
+  - *Synthetic paraphrase and the optional LLM judge:* a different family, so that generated data does not match the model under test: `mistralai/mistral-large-4-1t-a52b`, with `deepseek-ai/deepseek-v4.1-flash` as the alternative. Part 6 confirms this.
+  - *SA-LARGER:* the largest tool-capable model that answers: `nvidia/nemotron-3-ultra-550b-a55b`.
 - **Probe protocol** (Part 2; development smoke set only, never test data):
   1. List the available models via `/v1/models`.
   2. For each candidate, run 20 tool-calling trials and 20 structured-output trials.
@@ -358,7 +359,7 @@ Tools are kept to the ones that need a model's judgement, because each call cost
 - **Decoding.**
   - Temperature 0, with a fixed seed where supported, for the primary comparison, identical for every role and condition.
   - Temperature 0.7 only for self-consistency and stability runs.
-- **Reasoning.** If the model has a reasoning switch, every role and baseline uses the same default setting. For the primary model that is reasoning on, with a budget of 4,096 tokens (`policies/models.yaml`). SA-MAX uses the highest setting available.
+- **Reasoning.** If the model has a reasoning switch, every role and baseline uses the same default setting. The primary model reasons by default, and `policies/models.yaml` states that explicitly. No higher setting has been found yet, so Part 4 must confirm what SA-MAX can actually change.
 - **Structured output.**
   - Every model follows one path: JSON instructions, then Pydantic validation, then one repair attempt. The probe measures this exact path. If a model falls short, a JSON-schema response format can be added without changing the agents.
   - An output that is still invalid becomes an "agent failed" finding (U7).
@@ -507,14 +508,15 @@ Every model call in a run goes through the one shared rate limiter. Hitting any 
 
 - A LangGraph `StateGraph` with nodes for intake, jurisdiction, regulator fan-out (parallel), clone-check, detection, reconcile round, response fan-out, synthesis, verify, remediate and report.
 - Conditional edges enforce the limits.
-- The blackboard is the graph state, with append-only reducers.
-- A SQLite checkpointer gives resume and step-by-step replay.
+- The event log is the single record of a case. The graph's own state is a few counters, so it holds nothing restricted.
+- Replay comes from the event log, and a run restarts any case it did not finish. Cases are not checkpointed mid-way, because a node's model calls are not safe to repeat (Appendix F).
+- A challenge round that changes nothing ends the rounds early, which saves free requests.
 
 ### 6.6 Conflict types (detector rules)
 
 | ID | Conflict | Deterministic trigger | Example | Usual resolution |
 |---|---|---|---|---|
-| C1 | Relevance | JUR's status for regulator R differs from R's own relevance opinion | JUR excludes VARA because of a claimed DIFC address; the VARA agent says the claim is unverified | P4/P5: overlap allowed; claims are not facts, so R becomes "possible" |
+| C1 | Relevance | JUR and R's own agent disagree on whether regulator R is relevant at all (primary and possible both count as relevant) | JUR excludes VARA because of a claimed DIFC address; the VARA agent says the claim is unverified | P4/P5: overlap allowed; claims are not facts, so R becomes "possible" |
 | C2 | Identity | Two findings tie the claimed firm to different entries, or the claimed reference number belongs to another entity | The reference number in the offer belongs to a different authorised firm | HC3 if the claim is contradicted, otherwise U4 |
 | C3 | Scope | The activity falls outside the matched licence while another finding treats the firm as authorised for it | CMA Category 5 firm and FX trading | P3, then HC4 |
 | C4 | Contact | CLN reports a mismatch, look-alike or alert listing while a regulator agent's finding implies consistency | "Matches the register" versus "domain is alert-listed" | P2, then HC1/HC5 |
@@ -523,6 +525,8 @@ Every model call in a run goes through the one shared rate limiter. Hitting any 
 | C7 | Claim versus record | The offer claims regulator X; X has no match, but another register does | Claims the DFSA; matches a VARA IPA entry | HC3, plus C3 if the entry is IPA-only |
 
 The Reconciler may open conflicts the detector missed. These are logged as `detected_by=REC` and measured separately, which shows what the LLM adds beyond the fixed rules.
+
+The detector runs after every round. If a trigger no longer holds, for example because an agent revised its finding, the conflict is settled with no model request.
 
 ### 6.7 How the Reconciler settles conflicts
 
@@ -568,6 +572,9 @@ If the proposal is *more cautious* than the policy allows (say "Could not verify
 
 - The Verifier can only approve or veto. It never writes a result.
 - A veto can move a result toward "Could not verify", never toward "Consistent".
+- The Reconciler's resolutions close conflicts, but they never remove a valid finding from what the decision-policy engine reads. A finding whose evidence holds stands, however it was argued.
+- A hard conflict backed by valid evidence stands even if a challenge to it goes unanswered, while a finding with an unanswered challenge cannot support `CONSISTENT`. So a challenge alone can never make a result more reassuring.
+- A report states only the hard conflicts the evidence backs, even if a proposal listed others.
 - After one remediation cycle, a standing veto turns the result into "Could not verify", with the veto reasons listed.
 
 ### 6.9 What each agent sees
@@ -644,9 +651,9 @@ Because these rows are restricted, the model sees placeholders: the firm name be
   - rounds and agents: `round.started`, `agent.activated`, `agent.repair`, `agent.failed`
   - model and tool calls: `llm.response` (with usage and a hash of the request, not the request itself), `tool.called`, `tool.failed`, `evidence.minted`; retries and rate limiting are reported as `llm.retry` and `rate_limited`
   - findings and messages: `finding.posted`, `finding.revised`, `message.sent`, `protocol.rejected`
-  - conflicts: `conflict.detected`, `conflict.resolved`
-  - proposal and verification: `proposal.created`, `verifier.gate`, `verifier.decision`
-  - outcome: `result.finalized`, `budget.exceeded`, `rate_limited`
+  - conflicts: `conflict.detected`, `conflict.resolved`, `conflict.settled`
+  - proposal and verification: `proposal.created`, `policy.derived`, `verifier.decision` (with every gate's result), `verifier.autofix`
+  - outcome: `result.finalized`, `report.wording_replaced`, `case.aborted`, `budget.exceeded`, `rate_limited`
 - **Trace bundle:** each case can be exported as a JSON bundle (events, findings, messages, evidence references). DFSA values are left out unless the bundle is opened in research mode.
 - **Coordination telemetry** derived from events:
   - conflicts per case;
@@ -1194,7 +1201,7 @@ All components are free and open source. Versions are pinned in lock files.
 | Storage | **JSONL** snapshots with JSON manifests; **SQLite** (WAL) for cases, events and runs; DuckDB for analysis | Transparent, easy to diff, no extra services; DuckDB reads JSONL directly | Parquet (later, only if needed); Postgres (only if multiple users need it) |
 | Data and tool libraries | `openpyxl`, `pdfplumber` (Part 8), `rapidfuzz`, `tldextract` (bundled Public Suffix List, updates turned off), `phonenumbers`, `schwifty` (IBAN), PyYAML | Mature, deterministic, offline | — |
 | Evaluation | `numpy`, `scipy`, `statsmodels`, `scikit-learn`, `matplotlib`/`plotly`, Jupyter | Standard and citable | — |
-| Quality | `ruff`, `mypy`, `pytest` with a network block; the commit guard as a git pre-commit hook | — | — |
+| Quality | `ruff`, `mypy`, `pytest` with a network block, Hypothesis for property tests; the commit guard as a git pre-commit hook | — | — |
 | CI | **GitHub Actions**, free for public repositories: commit guard, lint, type check, tests | Every push to `main` is checked | — |
 | Frontend | **Next.js 16** (App Router), **React 19**, **TypeScript** (strict) | Current major version; server components for the Lab | — |
 | Styling | **Tailwind CSS v4** with CSS-variable design tokens; shadcn/ui (Radix) restyled as glass | Speed plus accessible primitives | — |
@@ -1276,7 +1283,11 @@ MultiAgent-Orchestration/              (local folder; GitHub: KartikJoshi23/TESS
 │   │   │                              prompts, agent runner, model probe
 │   │   ├── agents/                    tool belt, the seven agents, smoke command
 │   │   ├── devdata.py                 installs the fictional world for tests and smoke runs
-│   │   ├── orchestration/  baseline/  reporting/  api/   (Parts 3–4)
+│   │   ├── orchestration/             decision engine, conflict detector, Verifier gates,
+│   │   │                              crew graph, ablation switches, case runner
+│   │   ├── reporting/                 final result and the report (output contract)
+│   │   ├── api/                       FastAPI app, SSE stream, case service
+│   │   ├── baseline/                  (Part 4)
 │   └── tests/                         unit and governance tests; fictional fixtures only
 ├── eval/
 │   ├── smoke/                         fictional world and 25-case smoke set (committed)
@@ -1351,7 +1362,7 @@ Each agent is a tile of smoked glass lit from inside. Messages travel as light b
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────────┐
-│ CASE SYN-0142 · SYNTHETIC · Crew (full) · nemotron-3-super · T=0   23 req · 41K tok│
+│ CASE SYN-0142 · SYNTHETIC · Crew (full) · nemotron-3.5-super · T=0 23 req · 41K tok│
 ├────────────────────────────────────────────────────────┬─────────────────────────┤
 │                     ◇ Jurisdiction                     │ BLACKBOARD              │
 │        ◇ CMA           ◇ DFSA           ◇ VARA         │ ▣ F-J2 VARA excluded    │
@@ -1416,8 +1427,8 @@ Each part ends with a short report covering what was built, tests run, open issu
 | Part | Deliverables | Acceptance criteria | Human tasks in parallel | Size |
 |---|---|---|---|---|
 | **1. Foundations: governance, data layer, tools** ✅ | Repository scaffold; settings and modes; `policies/*.yaml` and their guards (network guard, link sanitiser, mode gate, synthetic-input gate, language linter, restricted-value masking); commit guard, pre-commit hook and CI; manual-ingest command with manifests and snapshots; hand-record templates and validators; all deterministic tools; seed rule cards with citations and verification status; docs (data governance, DFSA permission draft, annotation guidelines v0, ADRs) | All tools unit-tested on fictional fixtures; governance tests pass (regulator domains blocked; DFSA links cleaned; zero DFSA values in demo mode; masking invariant; guard blocks restricted paths, keys and DFSA deep links) | **You:** read the DFSA disclaimer; CMA "Export To Excel"; VARA transcription; DFSA hand-recording (2026 alerts and register facts for evaluation firms); CMA warnings hand-record; optionally send the DFSA letter | L |
-| **2. Protocol, blackboard, runner, the seven agents** (built; live runs wait for the key) | Pydantic schemas (findings, messages, claim catalogue); event-sourced blackboard (SQLite); per-agent views; `LLMClient` (OpenAI-compatible, rate limiter, retries, replay cache); masking wired into every request; **model probe** and ADR; `AgentRunner` (tool loop, JSON validation and repair, usage, failures); prompt v1 for all roles; a 25-case hand-written synthetic smoke set | Each agent passes fixture tests with recorded responses; live smoke runs within a request cap; invariants: evidence IDs must exist, gold fields absent, no restricted value in any outgoing request | **You:** create one NVIDIA API key and put it in `.env` (I'll ask at the start of Part 2); verify rule cards against primary sources | L |
-| **3. Crew orchestration, reconciliation, Verifier, streaming API** | LangGraph crew graph; round scheduler and mailboxes; conflict detector C1–C7; Reconciler protocol; Verifier gates G1–G8 and veto loop; decision-policy engine; report renderer and linter; FastAPI and SSE; command-line case runner; ablation switches | The worked example (§6.10) and 5 more scripted cases give the expected traces; property tests: cases always finish, a veto never upgrades a result, protocol rules are enforced | Annotation of entity-level gold labels begins | L |
+| **2. Protocol, blackboard, runner, the seven agents** ✅ | Pydantic schemas (findings, messages, claim catalogue); event-sourced blackboard (SQLite); per-agent views; `LLMClient` (OpenAI-compatible, rate limiter, retries, replay cache); masking wired into every request; **model probe** and ADR; `AgentRunner` (tool loop, JSON validation and repair, usage, failures); prompt v1 for all roles; a 25-case hand-written synthetic smoke set | Each agent passes fixture tests with recorded responses; live smoke runs within a request cap; invariants: evidence IDs must exist, gold fields absent, no restricted value in any outgoing request | **You:** create one NVIDIA API key and put it in `.env` (I'll ask at the start of Part 2); verify rule cards against primary sources | L |
+| **3. Crew orchestration, reconciliation, Verifier, streaming API** ✅ | LangGraph crew graph; round scheduler and mailboxes; conflict detector C1–C7; Reconciler protocol; Verifier gates G1–G8 and veto loop; decision-policy engine; report renderer and linter; FastAPI and SSE; command-line case runner; ablation switches | The worked example (§6.10) and 5 more scripted cases give the expected traces; property tests: cases always finish, a veto never upgrades a result, protocol rules are enforced | Annotation of entity-level gold labels begins | L |
 | **4. Baselines** | RULES-ONLY, SA-BASE, SA-VER, SA-SC5, SA-MAX (optional SA-LARGER), on the shared runner; fairness-contract checks; comparable logging | Config-diff test shows that only orchestration differs; all conditions run on the smoke set | Human-written synthetic messages | M |
 | **5. Frontend** | Design system; Intake; Orchestration Theater (live and replay); Result Dossier; Arena; Evaluation Lab (using fixtures until Part 6); Data & Governance | Playwright end-to-end tests; reducer replay tests; accessibility checks; demo mode verified clean of DFSA values | Review of the visual design | L |
 | **6. Datasets and evaluation harness, plus pilot** | Entity-level gold builder; synthetic generator, validators and review workflow; splits; rate-limited, resumable harness; metrics; statistics; RULES-ONLY difficulty probe; **pilot** (20 items × the full run plan, about 4.4K requests); measured requests and timing; **pre-registration frozen** | Annotation κ ≥ 0.8 (or the single-annotator fallback); pilot runs end to end | Annotation and adjudication; final freeze of snapshots | L |
@@ -1521,7 +1532,7 @@ Each part ends with a short report covering what was built, tests run, open issu
 | ID | Decision | Resolution | Why it is best for the project |
 |---|---|---|---|
 | D1 | Approve the plan | **Approved.** Part 1 built | — |
-| D2 | Models and budget | **$0.** NVIDIA API catalog free tier. Primary model `nvidia/nemotron-3-super-120b-a12b`, confirmed by the Part 2 probe. Optional capability arm on a smaller Nemotron model; optional SA-LARGER | Free; strong tool calling; one family keeps the capability comparison clean; open weights let others repeat it |
+| D2 | Models and budget | **$0.** NVIDIA API catalog free tier. Primary model `nvidia/nemotron-3.5-super-vl-120b-a12b`, chosen by the probe (ADR-0004). Optional capability arm on a smaller Nemotron model; optional SA-LARGER | Free; strong tool calling; one family keeps the capability comparison clean; open weights let others repeat it |
 | D3 | Who does the human tasks | **You:** CMA export, CMA warnings, VARA transcription, DFSA hand-recording. **Annotation:** you plus one volunteer if available, otherwise the single-annotator fallback | These tasks can't legally be automated (DFSA) or are best done by hand (CMA, VARA terms) |
 | D4 | DFSA sign-off and permission request | **Yes.** Read the disclaimer before data entry, and send the drafted letter (`docs/dfsa-permission-request.md`) from your own email | It costs nothing and is the strongest protection for any later publication |
 | D5 | What happens when a model fails | **No silent model switching.** A failure is recorded as U7. An optional secondary model is allowed in interactive mode only, and is off by default | Keeps experimental control |
@@ -1726,4 +1737,16 @@ Each change keeps to the approved design, or moves it for the reason given.
 | F8 | 2 | Every model follows one structured-output path | All conditions stay identical, and the probe measures the path that is really used |
 | F9 | 2 | Purge also deletes `runs/` | It holds row references and masked relations, which should not outlive the facts |
 | F10 | 2 | New committed files: `policies/models.yaml`, `backend/prompts/v1/`, `eval/smoke/` | Model settings are policy, prompts are versioned with the code, and the smoke set is fictional, so it is safe to publish |
+| F11 | 3 | New reason U9 | An offer can match an active firm whose scope for the activity cannot be confirmed. None of U1–U8 fits, and every "Could not verify" must list a reason |
+| F12 | 3 | No SQLite checkpointer for the graph. The event log is the only record of a case, and the graph's state is a few counters | A node's model calls are not safe to repeat, so resuming mid-case could post findings twice. Restarting an unfinished case is safe, and replay already comes from the event log. This also keeps restricted data out of a second store |
+| F13 | 3 | C1 fires only when agents disagree on whether a regulator is relevant, not on primary versus possible | Both mean relevant, and an extra conflict would spend free requests on nothing |
+| F14 | 3 | Conflicts can be settled by the detector, with a new `settled` status and event | The worked example needs it: a revision can remove a conflict's cause, and that should cost no model request |
+| F15 | 3 | An offer with no deciding contact point fails K4 | With no contact to compare, nothing ties the offer to the firm. The plan did not say, and passing vacuously would be false reassurance |
+| F16 | 3 | The Verifier's model checks run only if every deterministic gate passes | A failed gate is a veto anyway, so the model request would be wasted |
+| F17 | 3 | A contact point with nothing official to compare it with can stand without evidence, in gate G1 | There is no record for it to cite. It still fails K4 |
+| F18 | 2 | The primary model changed to `nvidia/nemotron-3.5-super-vl-120b-a12b` | The planned model is listed but returns 404 for this account. The newer model of the same size passed every probe trial (ADR-0004) |
+| F19 | 2 | The probe reports each model as it finishes, and the default candidates are the models this account can reach | A model that times out costs many minutes in retries, and the first full run overran its limit and lost its results |
+| F20 | 3 | A correctness review of Parts 1–3 found and fixed ten defects. Rationales clipped to 60 words were rejected as too long, so resolutions could be lost. A CMA status of "Inactive" was read as active. DFSA alerts found only by a near name were recorded as exact matches. A listed email domain did not count as a listed contact. A look-alike comparison added HC5 even to a matching contact. One consulted list counted as checking a whole regulator. A plain answer could close a challenge. A report could say "checked" for a failed check. HC5's policy text used a banned word. A claimed regulator outside coverage could still end as Consistent | Several of these pushed results the wrong way, so each has a test. A check for the last one now reports U2 |
+| F21 | 3 | A finding with nothing to cite, such as `targeting`, is no longer a claim in a proposal. Coverage is reported separately | The first live run reached the right answer, then the Verifier vetoed it, rightly calling an uncited judgement unsupported |
+| F22 | 3 | `max_tokens` rose from 8,192 to 16,384 | In the first live run, reasoning used the whole allowance and left no answer |
 

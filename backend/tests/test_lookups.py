@@ -80,6 +80,17 @@ def test_dfsa_lookup_in_research_mode(ctx):
         assert set(evidence.fields) <= RESTRICTED_SAFE_FIELDS  # no DFSA values in evidence
 
 
+def test_a_dfsa_alert_found_only_by_name_keeps_its_match_quality(ctx):
+    """HC2 needs an exact name or a listed alias, so a near match must not read as exact."""
+    near = dfsa_facts_lookup(ctx, name="Zenith Harbor")
+    alert = near.summary["alert_matches"][0]
+    assert alert["matched_on"] == "firm_named" and alert["match_type"] != "exact"
+    record = next(e for e in near.evidence if e.kind.value == "alert_entry")
+    assert record.fields["match_type"] == alert["match_type"]
+    exact = dfsa_facts_lookup(ctx, name="Zenith Harbor Partners")
+    assert exact.summary["alert_matches"][0]["match_type"] == "exact"
+
+
 def test_dfsa_lookup_in_demo_mode_loads_nothing(demo_ctx):
     result = dfsa_facts_lookup(demo_ctx, name="Lumen Crest Capital")
     assert result.summary["available"] is False

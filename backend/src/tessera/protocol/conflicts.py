@@ -23,6 +23,8 @@ class ConflictStatus(StrEnum):
     CHALLENGED = "challenged"
     RESOLVED = "resolved"
     UNRESOLVED = "unresolved"
+    #: The trigger no longer holds, for example because an agent revised its finding.
+    SETTLED = "settled"
 
 
 class Conflict(BaseModel):

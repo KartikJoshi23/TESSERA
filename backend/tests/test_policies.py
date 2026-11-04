@@ -4,10 +4,12 @@ import pytest
 import yaml
 
 from tessera.errors import PolicyError
+from tessera.governance.language import lint_text
 from tessera.governance.policies import (
     UAE_REGULATORS,
     load_decision_policy,
     load_language_policy,
+    load_policies,
     load_sources_policy,
 )
 from tessera.protocol.contacts import DEFAULT_CONTACT_ROLES
@@ -83,3 +85,15 @@ def test_contact_roles_in_code_match_the_policy():
     assert {
         kind.value: role.value for kind, role in DEFAULT_CONTACT_ROLES.items()
     } == decision.contact_roles
+
+
+def test_the_policys_own_wording_passes_the_language_policy():
+    """Reports quote these texts, so they must follow the rules a report is held to."""
+    policies = load_policies(REPO_ROOT / "policies")
+    decision = policies.decision
+    rules = (
+        *decision.hard_conflicts,
+        *decision.consistent_conditions,
+        *decision.unverified_reasons,
+    )
+    assert not [r.id for r in rules if lint_text(r.text, policies.language)]
