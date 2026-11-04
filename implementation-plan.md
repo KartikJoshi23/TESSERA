@@ -5,7 +5,7 @@
 | | |
 |---|---|
 | **Version** | 2. Audited and revised on 3 November 2026; Appendix E lists every finding and fix. |
-| **Status** | Approved to proceed on 3 Nov 2026. Part 1 (foundations) is delivered. Parts 2–8 are pending, and each starts only after your "continue". |
+| **Status** | Approved to proceed on 3 Nov 2026. Part 1 (foundations) is delivered. Part 2 (protocol, blackboard, runner, the seven agents) is built and tested offline, and its live probe and live smoke run wait for the NVIDIA key. Parts 3–8 are pending, and each starts only after your "continue". |
 | **Budget** | **$0.** Every model, service and tool is free (§1.4). |
 | **Repository** | <https://github.com/KartikJoshi23/TESSERA> (public). Real data and `PS.md` never leave this machine (§12.7). |
 | **Problem** | `PS.md`, Problem 1 (finalized). Problem 2, the Part B audit logs and the dropped candidates are used only where they constrain Problem 1. |
@@ -42,6 +42,7 @@
 - [Appendix C: Glossary](#appendix-c-glossary)
 - [Appendix D: Sources and research log](#appendix-d-sources-and-research-log)
 - [Appendix E: Audit log (version 1 → version 2)](#appendix-e-audit-log-version-1--version-2)
+- [Appendix F: Changes made during the build](#appendix-f-changes-made-during-the-build)
 
 ---
 
@@ -292,15 +293,17 @@ A firm that isn't found is **never** a conflict on its own (R18). It becomes HC3
 
 | Agent | Purpose | Reads (blackboard view) | Tools | Writes | Can challenge |
 |---|---|---|---|---|---|
-| **JUR** Jurisdiction | Classify the offered activities, zone signals and claims; propose the set of relevant regulators, citing rules | Offer text (as quoted data), extracted contacts, its inbox | `extract_contact_points`, `get_rule_card` | Activity profile, zone signals, claims, relevance hypothesis per regulator (primary / possible / not indicated / excluded) | Regulator agents' relevance opinions |
-| **CMA** regulator agent | Apply the CMA register, warnings and scope rules: Category 5 limits, FDL 33 reach, the CMA virtual-asset framework, "SCA" as a legacy name | Offer, JUR findings, summaries of other regulators' findings, its inbox | `cma_register_lookup`, `cma_warnings_lookup`, `reverse_contact_lookup`, `get_rule_card` | Relevance opinion, register match or no-match, licence scope, alert hits, official contacts | JUR; other regulator agents |
-| **DFSA** regulator agent | The same for the DFSA, from hand-recorded facts (research mode only) | Same | `dfsa_facts_lookup`, `reverse_contact_lookup`, `get_rule_card` | Same | Same |
-| **VARA** regulator agent | The same for VARA: licensed VASPs and IPA holders kept separate; licensed activities; unlicensed list | Same | `vara_register_lookup`, `vara_unlicensed_lookup`, `reverse_contact_lookup`, `get_rule_card` | Same | Same |
+| **JUR** Jurisdiction | Classify the offered activities, zone signals and claims; propose the set of relevant regulators, citing rules | Offer text (as quoted data), extracted contacts, its inbox | None | Activity profile, zone signals, claims, relevance hypothesis per regulator (primary / possible / not indicated / excluded) | Regulator agents' relevance opinions |
+| **CMA** regulator agent | Apply the CMA register, warnings and scope rules: Category 5 limits, FDL 33 reach, the CMA virtual-asset framework, "SCA" as a legacy name | Offer, JUR findings, summaries of other regulators' findings, its inbox | `cma_register_lookup`, `cma_warnings_lookup` | Relevance opinion, register match or no-match, licence scope, alert hits, official contacts | JUR; other regulator agents |
+| **DFSA** regulator agent | The same for the DFSA, from hand-recorded facts (research mode only) | Same | `dfsa_facts_lookup` | Same | Same |
+| **VARA** regulator agent | The same for VARA: licensed VASPs and IPA holders kept separate; licensed activities; unlicensed list | Same | `vara_register_lookup`, `vara_unlicensed_lookup` | Same | Same |
 | **CLN** Clone-check | Compare every deciding contact and payment detail with the official record | Offer contact points, official contacts and alert hits from the regulator agents, its inbox | `compare_domain`, `analyse_phone`, `analyse_payment`, `reverse_contact_lookup`, `official_contacts_for` | Assessment per contact point; payment assessment | Any finding that assumes contacts are consistent |
-| **REC** Reconciler | Mediate conflicts; issue targeted challenges and requests; write the proposed result | All findings, messages, conflicts and evidence views. No agent's raw reasoning | `get_rule_card`; can route a lookup request to a named agent | Challenges, requests, resolutions, proposed result | All agents |
-| **VER** Verifier | Independent gate: veto unsupported or non-compliant results | Proposed claims, the **full** case evidence store, policies. **Not** the Reconciler's reasoning | `evidence_get`, decision-policy engine, language linter | Verifier report: APPROVE or VETO, with reasons | The proposed result |
+| **REC** Reconciler | Mediate conflicts; issue targeted challenges and requests; write the proposed result | All findings, messages, conflicts and evidence views. No agent's raw reasoning | None; can route a lookup request to a named agent | Challenges, requests, resolutions, proposed result | All agents |
+| **VER** Verifier | Independent gate: veto unsupported or non-compliant results | Proposed claims, the **full** case evidence store, policies. **Not** the Reconciler's reasoning | None for the model: the evidence is in its view. The decision-policy engine and language linter run as deterministic gates | Verifier report: APPROVE or VETO, with reasons | The proposed result |
 
 These parts run without an LLM: Intake (deterministic extraction), the Orchestrator and round scheduler, the Conflict Detector, the decision-policy engine, the report renderer and the language linter.
+
+Tools are kept to the ones that need a model's judgement, because each call costs a free-tier request. Intake runs `extract_contact_points` before any agent. Rule cards are in the prompts, and citing one mints its evidence. `reverse_contact_lookup` belongs to CLN alone, because it covers every alert list and one call is enough (Appendix F).
 
 ### 5.2 Role notes
 
@@ -342,32 +345,31 @@ These parts run without an LLM: Intake (deterministic extraction), the Orchestra
 ### 5.3 Model configuration (free tier)
 
 - **Provider.** NVIDIA API catalog (build.nvidia.com), free trial tier, at `https://integrate.api.nvidia.com/v1` (OpenAI-compatible). One key is kept in `NVIDIA_API_KEY` in the local `.env`, which is never committed. **The key is first needed in Part 2.**
-- **Candidate models.** Availability and capability are confirmed by the Part 2 probe.
-  - *Primary:* `nvidia/nemotron-3-super-120b-a12b`, a mixture-of-experts model with 12B active parameters and a long context, recommended for tool calling.
-  - *Capability arm:* a smaller model from the same family, such as `nvidia/nemotron-3.5-lightning-30b-a3b` if listed.
-  - *Synthetic paraphrase and the optional LLM judge:* a different family, such as `google/gemma-4-31b-it` or a Qwen or Mistral model, so that generated data does not match the model under test.
-  - *SA-LARGER:* the largest tool-capable model on the catalog at probe time.
+- **Candidate models.** `policies/models.yaml` lists them, with IDs taken from `/v1/models` on 4 Nov 2026. Capability is confirmed by the Part 2 probe.
+  - *Primary:* `nvidia/nemotron-3-super-120b-a12b`, a mixture-of-experts model with 12B active parameters and a long context, recommended for tool calling. Alternatives: `nvidia/nemotron-3.5-super-vl-120b-a12b`, `moonshotai/kimi-k2.6`.
+  - *Capability arm:* a smaller model from the same family, `nvidia/nemotron-3.5-lightning-30b-a3b`. Alternative: `nvidia/nemotron-nano-3-30b-a3b`.
+  - *Synthetic paraphrase and the optional LLM judge:* a different family, so that generated data does not match the model under test: `google/gemma-4-31b-it`. Alternatives: `openai/gpt-oss-20b`, `z-ai/glm-5.3-flash`, `deepseek-ai/deepseek-v4.1-flash`.
+  - *SA-LARGER:* the largest tool-capable model on the catalog at probe time: `nvidia/nemotron-3-ultra-550b-a55b`. Alternative: `mistralai/mistral-large-4-1t-a52b`.
 - **Probe protocol** (Part 2; development smoke set only, never test data):
   1. List the available models via `/v1/models`.
   2. For each candidate, run 20 tool-calling trials and 20 structured-output trials.
-  3. Select by fixed criteria: at least 95% valid tool calls; at least 95% schema-valid output after one repair; a context window of at least 128K tokens; acceptable median latency.
+  3. Select by fixed criteria: at least 95% valid tool calls; at least 95% schema-valid output after one repair; a context window of at least 128K tokens (read from the model card); acceptable median latency.
   4. Record the choice in ADR-0004 before any test-set run.
 - **Decoding.**
   - Temperature 0, with a fixed seed where supported, for the primary comparison, identical for every role and condition.
   - Temperature 0.7 only for self-consistency and stability runs.
-- **Reasoning.** If the model has a reasoning switch, every role and baseline uses the same default setting. SA-MAX uses the highest setting available.
+- **Reasoning.** If the model has a reasoning switch, every role and baseline uses the same default setting. For the primary model that is reasoning on, with a budget of 4,096 tokens (`policies/models.yaml`). SA-MAX uses the highest setting available.
 - **Structured output.**
-  - A JSON-schema response format when the model supports it.
-  - Otherwise, JSON instructions plus Pydantic validation and one repair attempt.
+  - Every model follows one path: JSON instructions, then Pydantic validation, then one repair attempt. The probe measures this exact path. If a model falls short, a JSON-schema response format can be added without changing the agents.
   - An output that is still invalid becomes an "agent failed" finding (U7).
 - **Tools.**
   - OpenAI-style function tools defined in JSON Schema, with `tool_choice: "auto"`.
-  - Arguments are validated before they run, with one repair retry.
-  - The runner checks that required tool calls actually happened.
+  - Arguments are validated before they run. An error goes back to the model as the tool's result, so it can correct itself.
+  - A regulator turn that produces no evidence from that regulator's sources is recorded as a coverage gap, so a skipped lookup cannot pass unnoticed.
 - **Rate limits and throughput.**
   - The free tier allows about 40 requests per minute per model. Per-model limits are not published; the build.nvidia.com header shows yours.
   - One shared rate limiter runs at 35 requests per minute, with exponential backoff on HTTP 429 or 5xx errors. Runs are resumable.
-  - **One key only.** No key rotation or extra accounts to get around limits. If throughput becomes the bottleneck, request a limit increase through NVIDIA's developer forum.
+  - **One key only.** No key rotation or extra accounts to get around limits. If throughput becomes the bottleneck, request a limit increase through NVIDIA's developer forum, but do not plan on one: forum replies point paying users to their own deployments, so the request budget must fit the free limit.
 - **Model identity.**
   - Record exact model IDs and dates.
   - Run every condition of an experiment within one time window.
@@ -411,7 +413,11 @@ Typed assertions let the Verifier check claims mechanically (G2, G8), and let th
 
 | Assertion type | Machine-checkable fields |
 |---|---|
-| `register_match` | Regulator, entity reference, match type (exact, alias, fuzzy or reference number), second identifier |
+| `activity` | Activity code, with evidence that the quoted words are in the offer |
+| `zone_signal` | Zone, basis (address, name, domain, phone, claim, other) |
+| `offer_claim` | What the offer says about itself: kind (firm name, regulator, licence reference, address, other) and value |
+| `targeting` | Whether the offer targets UAE clients (yes, no, unclear) |
+| `register_match` | Regulator, entity reference, match type (exact, alias, fuzzy, partial or reference number), second identifier |
 | `register_no_match` | Regulator, query, snapshot |
 | `licence_status` | Regulator, entity reference, status (active, IPA, withdrawn, suspended) |
 | `licence_scope` | Regulator, entity reference, activity code, covered (yes or no), rule ID |
@@ -419,7 +425,7 @@ Typed assertions let the Verifier check claims mechanically (G2, G8), and let th
 | `contact_assessment` | Contact point, status (matches official, look-alike of official, alert-listed, not on record, not comparable), official record reference |
 | `payment_assessment` | Beneficiary name versus registered name; wallet requested (yes or no); IBAN country |
 | `relevance` | Regulator, status (primary, possible, not indicated, excluded), rule IDs |
-| `coverage_gap` | Regulator that is relevant but not covered yet |
+| `coverage_gap` | Regulator, reason, and scope: a whole regulator that is relevant but not covered, or one field that could not be checked |
 
 ### 6.3 Evidence rules
 
@@ -635,9 +641,9 @@ Because these rows are restricted, the model sees placeholders: the firm name be
 
 - **Event types:**
   - case: `case.created`
-  - rounds and agents: `round.started`, `agent.activated`, `agent.failed`
-  - model and tool calls: `llm.request`, `llm.response` (with usage), `tool.called`, `evidence.minted`
-  - findings and messages: `finding.posted`, `message.sent`
+  - rounds and agents: `round.started`, `agent.activated`, `agent.repair`, `agent.failed`
+  - model and tool calls: `llm.response` (with usage and a hash of the request, not the request itself), `tool.called`, `tool.failed`, `evidence.minted`; retries and rate limiting are reported as `llm.retry` and `rate_limited`
+  - findings and messages: `finding.posted`, `finding.revised`, `message.sent`, `protocol.rejected`
   - conflicts: `conflict.detected`, `conflict.resolved`
   - proposal and verification: `proposal.created`, `verifier.gate`, `verifier.decision`
   - outcome: `result.finalized`, `budget.exceeded`, `rate_limited`
@@ -658,18 +664,18 @@ All tools are read-only, deterministic, offline and unit-tested. Each returns co
 
 | Tool | Used by | Input | Output (evidence created) |
 |---|---|---|---|
-| `extract_contact_points` | Intake, JUR, CLN, baseline | Offer text | Contact points with spans: URLs, domains (via the Public Suffix List), emails, phones (libphonenumber), WhatsApp and Telegram links and handles, IBANs, wallet formats, address cues, licence references |
+| `extract_contact_points` | Intake; every agent sees its output | Offer text | Contact points with spans: URLs, domains (via the Public Suffix List), emails, phones (libphonenumber), WhatsApp and Telegram links and handles, IBANs, wallet formats, address cues, licence references |
 | `cma_register_lookup` | CMA agent, baseline | Name, licence number or domain | Register entry or no-match: licence number, category or activities, status, contact fields where the export has them |
 | `cma_warnings_lookup` | CMA agent, baseline | Name, domain or phone | Warning entry or no-match |
 | `vara_register_lookup` | VARA agent, baseline | Name, licence reference or domain | Licensed or IPA entry (kept separate) or no-match: activities and status |
 | `vara_unlicensed_lookup` | VARA agent, baseline | Name or domain | Unlicensed entry or no-match |
-| `dfsa_facts_lookup` | DFSA agent, baseline | Name, reference number or domain | Restricted register or alert fact reference, or no-match. Research mode only |
-| `reverse_contact_lookup` | Regulator agents, CLN, baseline | A contact point | Hits across every alert, warning and unlicensed list |
+| `dfsa_facts_lookup` | DFSA agent, baseline | Name, reference number, domain, email or phone | Restricted register or alert fact reference, or no-match. Research mode only. The model gets masked identifiers and relations the tool worked out: status, zone, the activity codes the recorded services cover, and the alert's category in our own labels (§9.2) |
+| `reverse_contact_lookup` | CLN, baseline | A contact point | Hits across every alert, warning and unlicensed list |
 | `official_contacts_for` | CLN, baseline | An entity evidence ID | Official contact points from that record |
 | `compare_domain` | CLN, baseline | Offer domain and official domain | Derived analysis: registrable-domain equality; edit distance (Damerau–Levenshtein); character look-alikes and punycode; added-word ("combosquatting") and typo patterns; top-level-domain swaps |
 | `analyse_phone` | CLN, baseline | Offer phone and official phones | Equality in E.164 format; country; number type. A number's validity is **never** treated as a signal |
 | `analyse_payment` | CLN, baseline | Payment details and entity record | IBAN checksum and country; beneficiary name versus registered name; crypto wallet requested |
-| `get_rule_card` | All agents, baseline | Rule ID or regulator | Rule-card evidence: our own wording plus citation and verification status |
+| `get_rule_card` | The runner, when an agent cites a rule (cards are in the prompts) | Rule ID | Rule-card evidence: our own wording plus citation and verification status |
 
 Planned later: CBUAE and FSRA register lookups, an FSRA alerts lookup, an optional I-SCAN lookup through the official API, and optional domain context (RDAP, Certificate Transparency) that never decides a result.
 
@@ -738,7 +744,7 @@ Each source was checked with one page view, or through search results, with no d
 | **ADGM** terms | A limited, revocable licence to use the platforms; the reproduction clause was not reviewed | Reading the terms in full is a prerequisite for Part 8 |
 | **IOSCO I-SCAN** | An official API is available after signing the API Terms of Use and applying. The public portal returned HTTP 403 to automated access, so it was not retried | Optional, in Part 8. Absence from I-SCAN never counts as evidence |
 | **DFSA** | **Deliberately not accessed** by any automated tool. The constraints come from PS.md's verified quotes | A team member reads the full Legal Disclaimer in a browser before entering data (§9.5) |
-| **NVIDIA API catalog** (trial terms; from secondary sources) | For prototyping, research, development, testing and learning, not production. Free tier rate-limited to about 40 requests per minute per model (not published per model). Sources disagree on whether inputs to free endpoints are logged or used for training | Research use fits. Every request is treated as possibly stored by a third party, hence the masking gateway, no personal data and one key. Part 2 rechecks the current terms |
+| **NVIDIA API catalog** (trial terms; from secondary sources) | For prototyping, research, development, testing and learning, not production. Free tier rate-limited to about 40 requests per minute per model (not published per model). Sources disagree on whether inputs to free endpoints are logged or used for training | Research use fits. Every request is treated as possibly stored by a third party, hence the masking gateway, no personal data and one key. The Part 2 recheck (4 Nov 2026) found no official terms page that could be read without an account, so **you read the terms when you create the key** |
 | **crt.sh** (Certificate Transparency) | No usage policy on the homepage | Optional source only; check its documentation before any automated use |
 
 ### 8.4 Phase 2 and optional sources
@@ -775,7 +781,8 @@ Each source was checked with one page view, or through search results, with no d
 | Dataset items containing DFSA fact values | Entity-level queries, and synthetic messages built from DFSA facts | Yes. Internal research only | `datasets/restricted/` (git-ignored) |
 | References to DFSA facts | Restricted row IDs inside evidence records, events and logs | Yes | Anywhere local |
 | Indexes, embeddings, search services over DFSA data | — | **Never** | — |
-| DFSA values in requests to model providers | — | **Never.** Masked first (§9.4) | — |
+| DFSA values in requests to model providers | Identifiers, recorded services, addresses, alert dates | **Never.** Identifiers are masked, and the rest is not sent (§9.4) | — |
+| Relations the tools work out about a masked entity | Status; zone; which of our activity codes the recorded services cover; the alert's category in our own labels | Yes. This is all a model learns beyond placeholders (§6.9) | Requests to model providers; run logs |
 
 ### 9.3 Data flow
 
@@ -805,12 +812,13 @@ Each source was checked with one page view, or through search results, with no d
    - The local development replay cache (§13.1) stores only masked requests and is switched off during evaluation.
 5. **Links:** a link sanitiser rewrites any DFSA link to `https://www.dfsa.ae/`.
 6. **Masking gateway:**
-   - Every restricted value (firm names, reference numbers, domains, emails, phones) is registered when the restricted store loads.
-   - Before any request leaves the machine, each registered value is replaced with a stable placeholder for that case. Longer values are replaced first, and generic name parts are kept.
+   - Every restricted value (firm names, reference numbers, domains, emails, phones, street-level address parts) is registered when the restricted store loads.
+   - Before any request leaves the machine, each registered value is replaced with a stable placeholder for that case. Longer values are replaced first, and generic name parts and zones are kept.
    - Placeholders are restored only locally.
-   - An invariant test serialises every outgoing request in the test suite and in evaluation runs, and fails if any registered value appears.
+   - Facts that are not identifiers are not sent at all. Recorded services become activity codes through our own mapping in `knowledge/taxonomy/activities.yaml`. If a service is not understood, scope is reported as unknown. Alert dates stay local, and the report adds them at display time.
+   - An invariant test serialises every outgoing request in the test suite and in evaluation runs, and fails if any registered value appears. A second test checks every recorded service, street and alert date against all outgoing requests and the event log.
 7. **Local only:** the API binds to `127.0.0.1`. There is no public deployment configuration.
-8. **Purge:** deleting `data/restricted/` and `datasets/restricted/` removes every DFSA value. The system still runs, and DFSA-dependent cases become "Could not verify".
+8. **Purge:** deleting `data/restricted/` and `datasets/restricted/` removes every DFSA value. Delete `runs/` as well: it holds no DFSA values, but it keeps row references and masked relations. The system still runs, and DFSA-dependent cases become "Could not verify".
 9. **Access log:** every load of restricted data is recorded in the event log, as references only.
 
 ### 9.5 Permission and sign-off
@@ -1132,8 +1140,8 @@ The primary comparison is never cut.
 ### 12.6 Privacy, data handling and retention
 
 - **No personal data by design:** inputs are synthetic and identifiers come from reserved ranges.
-- **Sent to NVIDIA's free endpoints,** which may record inputs and outputs: only synthetic text, public CMA and VARA facts, and placeholders. DFSA values never leave the machine.
-- **Run logs** keep synthetic text plus references only.
+- **Sent to NVIDIA's free endpoints,** which may record inputs and outputs: only synthetic text, public CMA and VARA facts, placeholders, and relations the tools work out about masked entities (§9.2). DFSA values never leave the machine.
+- **Run logs** keep masked synthetic text, references and those relations.
 - **When the paper is finished,** `runs/` is archived without any restricted data.
 
 ### 12.7 Release controls and the public repository
@@ -1179,7 +1187,7 @@ All components are free and open source. Versions are pinned in lock files.
 | Layer | Choice | Why | Alternatives considered |
 |---|---|---|---|
 | Language (backend) | **Python 3.11+**, managed with `uv` | Installed on this machine; best ecosystem for data, evaluation and statistics | TypeScript end to end: weaker for research analysis |
-| LLM access | **Provider-agnostic `LLMClient`** over the OpenAI-compatible Chat Completions API, using the open-source `openai` Python package pointed at NVIDIA's endpoint. **NVIDIA API catalog** (free trial tier) is the default provider | Free; many open-weight models behind one API; open weights help others repeat the work | Paid APIs (ruled out by the $0 budget). Local inference (a 2 GB GPU is too small). Other free tiers (Gemini, Groq, OpenRouter free models, GitHub Models) are emergency backups only, never mixed inside one experiment |
+| LLM access | **Provider-agnostic `LLMClient`** over the OpenAI-compatible Chat Completions API, called directly with `httpx` so that the whole request path is in our code. **NVIDIA API catalog** (free trial tier) is the default provider | Free; many open-weight models behind one API; open weights help others repeat the work | Paid APIs (ruled out by the $0 budget). Local inference (a 2 GB GPU is too small). Other free tiers (Gemini, Groq, OpenRouter free models, GitHub Models) are emergency backups only, never mixed inside one experiment |
 | Orchestration | **LangGraph 1.x** for *control flow only*: parallel fan-out, conditional edges, SQLite checkpointing, streaming. Our own typed protocol and blackboard sit on top, and no LangChain model wrappers are used | Explicit and inspectable graph; resume and replay; stable since v1.0 (Oct 2025) | CrewAI and AutoGen/AG2 hide the message protocol or let the LLM pick who speaks, which makes ablations harder. Hosted agent platforms are paid and store session data off-machine. A fully hand-written scheduler stays possible, because the protocol does not depend on LangGraph |
 | Schemas | **Pydantic v2** | One source of truth for structured outputs, the API, OpenAPI and TypeScript types | — |
 | API | **FastAPI**, Uvicorn, `sse-starlette` | Typed and fast; Server-Sent Events fit one-way event streams | WebSockets: not needed |
@@ -1239,6 +1247,7 @@ MultiAgent-Orchestration/              (local folder; GitHub: KartikJoshi23/TESS
 ├── policies/
 │   ├── sources.yaml                   per-source access, storage, linking, display; network rules
 │   ├── decision_policy.yaml           outcomes, HC, K and U rules, P1–P7, thresholds
+│   ├── models.yaml                    provider, rate limit, decoding, limits, model roles
 │   └── language_policy.yaml           banned terms, allowed proper nouns, disclaimer, result strings
 ├── knowledge/
 │   ├── rule_cards/                    jurisdiction, cma, dfsa, vara, clone (cbuae, fsra in Part 8)
@@ -1252,17 +1261,26 @@ MultiAgent-Orchestration/              (local folder; GitHub: KartikJoshi23/TESS
 ├── datasets/                          local only (git-ignored apart from the README)
 ├── backend/
 │   ├── pyproject.toml, uv.lock
+│   ├── prompts/v1/                    system prompts for every role (versioned)
 │   ├── src/tessera/
 │   │   ├── config/                    settings, modes, repository-root discovery
 │   │   ├── governance/                policies, network guard, links, modes, synthetic gate,
 │   │   │                              language linter, restricted-value masking
-│   │   ├── protocol/                  evidence, contacts (Part 1); findings, messages… (Part 2)
+│   │   ├── protocol/                  evidence, contacts, claims, findings, messages, conflicts,
+│   │   │                              results, case
 │   │   ├── normalize/                 names (incl. Arabic), domains, phones, emails
 │   │   ├── data/                      schemas, adapters (CMA Excel, CSV), snapshots, registry, ingest
 │   │   ├── tools/                     extraction, lookups, matching, domain/phone/payment, rule cards
-│   │   ├── blackboard/  llm/  agents/  orchestration/  baseline/  reporting/  api/   (Parts 2–4)
+│   │   ├── blackboard/                event store, protocol rules, per-agent views
+│   │   ├── llm/                       transport, rate limit, retries, replay cache, leak checks,
+│   │   │                              prompts, agent runner, model probe
+│   │   ├── agents/                    tool belt, the seven agents, smoke command
+│   │   ├── devdata.py                 installs the fictional world for tests and smoke runs
+│   │   ├── orchestration/  baseline/  reporting/  api/   (Parts 3–4)
 │   └── tests/                         unit and governance tests; fictional fixtures only
-├── eval/                              (Part 6) synth, gold, harness, metrics, stats, configs, reports
+├── eval/
+│   ├── smoke/                         fictional world and 25-case smoke set (committed)
+│   └── …                              (Part 6) synth, gold, harness, metrics, stats, configs, reports
 ├── frontend/                          (Part 5) Next.js app
 └── runs/                              experiment outputs and event logs (git-ignored)
 ```
@@ -1398,7 +1416,7 @@ Each part ends with a short report covering what was built, tests run, open issu
 | Part | Deliverables | Acceptance criteria | Human tasks in parallel | Size |
 |---|---|---|---|---|
 | **1. Foundations: governance, data layer, tools** ✅ | Repository scaffold; settings and modes; `policies/*.yaml` and their guards (network guard, link sanitiser, mode gate, synthetic-input gate, language linter, restricted-value masking); commit guard, pre-commit hook and CI; manual-ingest command with manifests and snapshots; hand-record templates and validators; all deterministic tools; seed rule cards with citations and verification status; docs (data governance, DFSA permission draft, annotation guidelines v0, ADRs) | All tools unit-tested on fictional fixtures; governance tests pass (regulator domains blocked; DFSA links cleaned; zero DFSA values in demo mode; masking invariant; guard blocks restricted paths, keys and DFSA deep links) | **You:** read the DFSA disclaimer; CMA "Export To Excel"; VARA transcription; DFSA hand-recording (2026 alerts and register facts for evaluation firms); CMA warnings hand-record; optionally send the DFSA letter | L |
-| **2. Protocol, blackboard, runner, the seven agents** | Pydantic schemas (findings, messages, claim catalogue); event-sourced blackboard (SQLite); per-agent views; `LLMClient` (OpenAI-compatible, rate limiter, retries, replay cache); masking wired into every request; **model probe** and ADR; `AgentRunner` (tool loop, JSON validation and repair, usage, failures); prompt v1 for all roles; a 25-case hand-written synthetic smoke set | Each agent passes fixture tests with recorded responses; live smoke runs within a request cap; invariants: evidence IDs must exist, gold fields absent, no restricted value in any outgoing request | **You:** create one NVIDIA API key and put it in `.env` (I'll ask at the start of Part 2); verify rule cards against primary sources | L |
+| **2. Protocol, blackboard, runner, the seven agents** (built; live runs wait for the key) | Pydantic schemas (findings, messages, claim catalogue); event-sourced blackboard (SQLite); per-agent views; `LLMClient` (OpenAI-compatible, rate limiter, retries, replay cache); masking wired into every request; **model probe** and ADR; `AgentRunner` (tool loop, JSON validation and repair, usage, failures); prompt v1 for all roles; a 25-case hand-written synthetic smoke set | Each agent passes fixture tests with recorded responses; live smoke runs within a request cap; invariants: evidence IDs must exist, gold fields absent, no restricted value in any outgoing request | **You:** create one NVIDIA API key and put it in `.env` (I'll ask at the start of Part 2); verify rule cards against primary sources | L |
 | **3. Crew orchestration, reconciliation, Verifier, streaming API** | LangGraph crew graph; round scheduler and mailboxes; conflict detector C1–C7; Reconciler protocol; Verifier gates G1–G8 and veto loop; decision-policy engine; report renderer and linter; FastAPI and SSE; command-line case runner; ablation switches | The worked example (§6.10) and 5 more scripted cases give the expected traces; property tests: cases always finish, a veto never upgrades a result, protocol rules are enforced | Annotation of entity-level gold labels begins | L |
 | **4. Baselines** | RULES-ONLY, SA-BASE, SA-VER, SA-SC5, SA-MAX (optional SA-LARGER), on the shared runner; fairness-contract checks; comparable logging | Config-diff test shows that only orchestration differs; all conditions run on the smoke set | Human-written synthetic messages | M |
 | **5. Frontend** | Design system; Intake; Orchestration Theater (live and replay); Result Dossier; Arena; Evaluation Lab (using fixtures until Part 6); Data & Governance | Playwright end-to-end tests; reducer replay tests; accessibility checks; demo mode verified clean of DFSA values | Review of the visual design | L |
@@ -1622,7 +1640,7 @@ Every rule is written in our own words, cites its source and carries a verificat
 - Horizlaw, summary of CMA Decision No. 4/R.M/2026: <https://www.horizlaw.ae/insights/new-virtual-asset-regulations-a-summary-of-cma-decision-no4r.m2026>
 - Trade-press reports on Category 5 scope (secondary), for example FX News Group: <https://fxnewsgroup.com/forex-news/retail-forex/exclusive-cfds-broker-startrader-adds-uae-sca-category-five-license>
 
-**Free model provider** (secondary sources, searched 3 Nov 2026; Part 2 rechecks the live terms and limits):
+**Free model provider** (secondary sources, searched 3 Nov 2026 and rechecked 4 Nov 2026). The recheck found no official terms page that could be read without an account. An NVIDIA staff post says credits gave way to per-model rate limits that are not published. A third-party summary says trial content is not kept after each session, with exceptions, and does not settle training use. The design does not depend on that answer, because every request is treated as possibly stored.
 
 - NVIDIA developer forum on credits being replaced by rate limits and the definition of "trial" use: <https://forums.developer.nvidia.com/t/request-more-4-000-credits-option-on-build-nvidia-com/344567>
 - NVIDIA developer forum, a request to raise the rate limit (40 → 200 RPM): <https://forums.developer.nvidia.com/t/nim-api-rate-limit-increase-request-40-200-rpm-planning-multi-model-comparison-setup/371282.md>
@@ -1689,3 +1707,23 @@ The audit ran on 3 November 2026, after your request to audit the plan in depth 
 | A23 | Pilot cost wording was ambiguous | Low | "20 items × the full run plan" (§11.5) |
 | A24 | Conflict IDs in the worked example (K-1, K-2) clashed with the K1–K7 conditions | Low | Renamed CF-1 and CF-2 |
 | A25 | The repository had no code licence | Low | Recorded as decision D14 (deferred to you) |
+
+---
+
+## Appendix F: Changes made during the build
+
+Each change keeps to the approved design, or moves it for the reason given.
+
+| # | Part | Change | Why |
+|---|---|---|---|
+| F1 | 2 | **DFSA details no longer reach models.** The first version of the tools passed recorded services and alert dates through to the model, and left street addresses in offer text unmasked. That broke §6.9, §9.2 and §12.6. Services now become activity codes, alert dates stay local, and street-level address parts are masked. | Found while checking the code against the plan for this update, before any live call and before any of it was pushed. A new invariant test checks every recorded detail against all outgoing requests and the event log, and it was shown to fail when an alert date is put back |
+| F2 | 2 | `restricted_facts_for` crashed on analyses of restricted records, which have no row of their own. Fixed | Found by the whole-case test. It would have stopped every live case that reached the Reconciler with a restricted comparison |
+| F3 | 2 | LLM calls use `httpx` directly instead of the `openai` package | One dependency fewer, and the whole request path, with its leak checks, is in our code |
+| F4 | 2 | `reverse_contact_lookup` belongs to CLN alone | It covers every alert list, so regulator agents calling it too would spend requests for no new information |
+| F5 | 2 | `extract_contact_points` and `get_rule_card` are not model tools, and there is no `evidence_get` | Intake is deterministic, rule cards are in the prompts, and the Verifier's view already holds all evidence. Each saves a free-tier request |
+| F6 | 2 | The claim catalogue gained `activity`, `zone_signal`, `offer_claim` and `targeting`; `coverage_gap` gained a scope | The Jurisdiction agent's work is typed too, so it can be challenged and checked |
+| F7 | 2 | New event types: `agent.repair`, `tool.failed`, `finding.revised`, `protocol.rejected`, `llm.retry`. `llm.request` was dropped in favour of a request hash on `llm.response` | Rejections, repairs and failed tool calls are counted in telemetry. Prompts are not logged a second time |
+| F8 | 2 | Every model follows one structured-output path | All conditions stay identical, and the probe measures the path that is really used |
+| F9 | 2 | Purge also deletes `runs/` | It holds row references and masked relations, which should not outlive the facts |
+| F10 | 2 | New committed files: `policies/models.yaml`, `backend/prompts/v1/`, `eval/smoke/` | Model settings are policy, prompts are versioned with the code, and the smoke set is fictional, so it is safe to publish |
+

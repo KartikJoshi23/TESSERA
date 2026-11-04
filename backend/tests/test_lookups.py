@@ -69,7 +69,10 @@ def test_dfsa_lookup_in_research_mode(ctx):
     result = dfsa_facts_lookup(ctx, frn="F000000")
     register = result.summary["register_matches"][0]
     assert register["status"] == "authorised"
-    assert "Advising on Financial Products" in register["permitted_services"]
+    assert register["zone"] == "DIFC" and register["scope_complete"] is True
+    assert register["covers_activities"] == ["SEC.ADVICE", "SEC.BROKERAGE", "SEC.PROMOTION"]
+    assert "permitted_services" not in register and "address" not in register
+    assert "alert_date" not in result.summary["alert_matches"][0]
     assert result.summary["alert_matches"][0]["matched_on"] == "frn_named"
     assert result.restricted
     for evidence in result.evidence:

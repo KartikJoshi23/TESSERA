@@ -12,10 +12,13 @@ dependencies = [
     "tldextract>=5.1",
     "phonenumbers>=8.13",
     "schwifty>=2024.6",
+    "httpx>=0.27",
 ]
 
 [project.scripts]
 tessera-ingest = "tessera.data.ingest:main"
+tessera-probe = "tessera.llm.probe:main"
+tessera-smoke = "tessera.agents.smoke:main"
 
 [dependency-groups]
 dev = [

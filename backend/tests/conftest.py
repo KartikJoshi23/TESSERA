@@ -6,16 +6,27 @@ for fiction, and they live only in temporary directories.
 
 from __future__ import annotations
 
+import asyncio
 import csv
+import json
 import socket
-from datetime import date
 from pathlib import Path
 
 import pytest
 from openpyxl import Workbook
 
+from tessera.agents.base import Task
+from tessera.agents.crew import build_crew, open_case_env
+from tessera.blackboard.store import EventStore
 from tessera.config.settings import Mode, Settings, find_repo_root
-from tessera.data.ingest import ingest_file
+from tessera.data.registry import DataRegistry
+from tessera.devdata import install_world
+from tessera.governance.masking import MaskingGateway
+from tessera.governance.policies import load_sources_policy
+from tessera.governance.synthetic_gate import OfferInput
+from tessera.llm.client import GuardedLLM
+from tessera.llm.testing import ScriptedTransport
+from tessera.protocol.common import AgentId
 from tessera.tools.context import ToolContext
 
 REPO_ROOT = find_repo_root(Path(__file__))
@@ -123,182 +134,9 @@ def write_cma_workbook(path: Path) -> Path:
 
 
 def populate(data_dir: Path) -> Settings:
-    """Ingest fictional fixtures for every Phase 1 source, as a person would by hand."""
+    """Ingest the fictional world, through the same path a person would use by hand."""
     settings = make_settings(data_dir)
-    on = date(2026, 11, 4)
-
-    def run(source_id: str, file_path: Path) -> None:
-        ingest_file(source_id, file_path, settings=settings, retrieved_by="TEST", retrieved_on=on)
-
-    run("cma_licensed", write_cma_workbook(data_dir / "inbox" / "cma_licensed" / "export.xlsx"))
-    run(
-        "cma_warnings",
-        write_csv(
-            data_dir / "handrecords" / "cma_warnings.csv",
-            [
-                "record_id",
-                "entity_name",
-                "warning_date",
-                "domains",
-                "phones",
-                "emails",
-                "notes",
-                "page_url",
-                "recorded_by",
-                "recorded_on",
-            ],
-            [
-                [
-                    "CMA-W-0001",
-                    "Golden Dune Trading Platform",
-                    "2026-02-10",
-                    "goldendune-fx.example",
-                    "+44 7700 900456",
-                    "support@goldendune-fx.example",
-                    "Fictional fixture",
-                    "",
-                    "TEST",
-                    "2026-11-04",
-                ]
-            ],
-        ),
-    )
-    run(
-        "vara_register",
-        write_csv(
-            data_dir / "handrecords" / "vara_register.csv",
-            [
-                "record_id",
-                "entity_name",
-                "status",
-                "licence_ref",
-                "activities",
-                "website",
-                "aliases",
-                "page_url",
-                "recorded_by",
-                "recorded_on",
-            ],
-            [
-                [
-                    "VARA-R-0001",
-                    "Coral Ledger Exchange FZE",
-                    "LICENSED",
-                    "VL/26/01/001",
-                    "Exchange Services;Broker-Dealer Services",
-                    "coralledger.example",
-                    "Coral Ledger",
-                    "",
-                    "TEST",
-                    "2026-11-04",
-                ],
-                [
-                    "VARA-R-0002",
-                    "Saffron Chain Custody FZCO",
-                    "IPA",
-                    "IPA/26/02/003",
-                    "Custody Services",
-                    "saffronchain.example",
-                    "",
-                    "",
-                    "TEST",
-                    "2026-11-04",
-                ],
-            ],
-        ),
-    )
-    run(
-        "vara_unlicensed",
-        write_csv(
-            data_dir / "handrecords" / "vara_unlicensed.csv",
-            [
-                "record_id",
-                "entity_name",
-                "domains",
-                "date_listed",
-                "page_url",
-                "recorded_by",
-                "recorded_on",
-            ],
-            [
-                [
-                    "VARA-U-0001",
-                    "Mirage Coin Hub",
-                    "miragecoinhub.example;mirage-coin.example",
-                    "2026-01-13",
-                    "",
-                    "TEST",
-                    "2026-11-04",
-                ]
-            ],
-        ),
-    )
-    run(
-        "dfsa_register",
-        write_csv(
-            data_dir / "restricted" / "dfsa" / "register_facts.csv",
-            [
-                "record_id",
-                "firm_name",
-                "frn",
-                "status",
-                "permitted_services",
-                "address",
-                "website",
-                "phone",
-                "email_domains",
-                "aliases",
-                "recorded_by",
-                "recorded_on",
-            ],
-            [
-                [
-                    "D-R-001",
-                    "Lumen Crest Capital (DIFC) Limited",
-                    "F000000",
-                    "authorised",
-                    "Advising on Financial Products;Arranging Deals in Investments",
-                    "Gate Village, DIFC, Dubai",
-                    "lumencrest.example",
-                    "+971 4 000 2000",
-                    "lumencrest.example",
-                    "",
-                    "TEST",
-                    "2026-11-04",
-                ]
-            ],
-        ),
-    )
-    run(
-        "dfsa_alerts",
-        write_csv(
-            data_dir / "restricted" / "dfsa" / "alert_facts.csv",
-            [
-                "record_id",
-                "alert_date",
-                "category",
-                "firm_named",
-                "frn_named",
-                "contact_points_named",
-                "legitimate_contacts_stated",
-                "recorded_by",
-                "recorded_on",
-            ],
-            [
-                [
-                    "D-A-007",
-                    "2026-01-14",
-                    "impersonated_authorised_firm",
-                    "Lumen Crest Capital (DIFC) Limited",
-                    "F000000",
-                    "lumencrest-capital.example;+44 7700 900789",
-                    "@lumencrest.example",
-                    "TEST",
-                    "2026-11-04",
-                ]
-            ],
-        ),
-    )
+    install_world(settings)
     return settings
 
 
@@ -321,3 +159,46 @@ def demo_ctx(populated_settings: Settings) -> ToolContext:
 @pytest.fixture
 def empty_ctx(tmp_path: Path) -> ToolContext:
     return ToolContext.create("case-empty", make_settings(tmp_path / "empty-data"))
+
+
+# ---------------------------------------------------------------------- crew helpers
+
+
+class CrewHarness:
+    """One case on an in-memory store, with a scripted model behind the real guarded stack."""
+
+    def __init__(self, settings: Settings, offer_text: str, *replies, case_id: str = "case-1"):
+        self.settings = settings
+        self.registry = DataRegistry(settings, load_sources_policy(settings.policies_dir))
+        self.gateway = MaskingGateway(self.registry.restricted_values())
+        self.transport = ScriptedTransport(replies)
+        self.store = EventStore()
+        self.env = open_case_env(
+            store=self.store,
+            settings=settings,
+            registry=self.registry,
+            gateway=self.gateway,
+            llm=GuardedLLM(self.transport, self.gateway),
+            case_id=case_id,
+            offer=OfferInput(text=offer_text, synthetic=True, corpus_item_id="TEST"),
+        )
+        self.board = self.env.board
+        self.crew = build_crew()
+
+    def turn(self, agent: AgentId, kind: str = "initial", round: int = 0):
+        return asyncio.run(self.crew[agent].activate(self.env, Task(kind, round=round)))
+
+    def outgoing_text(self) -> str:
+        """Everything that left the machine, as one string."""
+        return json.dumps(self.transport.payloads, ensure_ascii=False)
+
+    def assert_no_leaks(self) -> None:
+        assert self.gateway.leaked_values(self.outgoing_text()) == []
+
+
+@pytest.fixture
+def harness(populated_settings: Settings):
+    def build(offer_text: str, *replies, **kwargs) -> CrewHarness:
+        return CrewHarness(populated_settings, offer_text, *replies, **kwargs)
+
+    return build

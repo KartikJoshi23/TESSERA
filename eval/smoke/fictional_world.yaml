@@ -1,0 +1,33 @@
+# FICTIONAL TEST DATA. Every firm, domain and number here is invented.
+# Domains use the reserved .example TLD. Phone numbers use ranges reserved for fiction, or
+# unassigned-looking UAE numbers that are used only as "official" fixture values.
+# DFSA sections below are fictional too, so they carry no DFSA material.
+cma_licensed:
+  - {name_en: "Falcon Ridge Securities L.L.C.", name_ar: "فالكون ريدج للأوراق المالية ذ.م.م", licence_no: CMA-L-1001, category: Category 1, activities: "Trading broker in OTC derivatives and currencies in the spot market; Securities dealing", status: Active, emirate: Dubai, website: www.falconridge.example, phone: "+971 4 000 1001", email: info@falconridge.example}
+  - {name_en: "Oasis Bridge Financial Consultancy LLC", licence_no: CMA-L-1002, category: Category 5, activities: "Introduction; Promotion; Financial consultation", status: Active, emirate: Abu Dhabi, website: https://oasisbridge.example, phone: "+971 2 000 1002"}
+  - {name_en: "Desert Lantern Capital PJSC", licence_no: CMA-L-1003, category: Category 2, activities: "Fund management", status: Active, emirate: Sharjah, website: desertlantern.example}
+  - {name_en: "Meridian Dune Brokers LLC", licence_no: CMA-L-1004, category: Category 1, activities: "Securities dealing; Trading broker in OTC derivatives and currencies in the spot market", status: Active, emirate: Dubai, website: meridiandune.example, phone: "+971 4 000 1004"}
+  - {name_en: "Silver Palm Advisers LLC", name_ar: "سيلفر بالم للاستشارات ذ.م.م", licence_no: CMA-L-1005, category: Category 5, activities: "Financial consultation", status: Active, emirate: Dubai, website: silverpalm.example}
+
+cma_warnings:
+  - {record_id: CMA-W-0001, entity_name: "Golden Dune Trading Platform", warning_date: "2026-02-10", domains: goldendune-fx.example, phones: "+44 7700 900456", emails: support@goldendune-fx.example, notes: Fictional fixture}
+  - {record_id: CMA-W-0002, entity_name: "Apex Mirage Markets", warning_date: "2026-05-22", domains: apexmirage.example}
+
+vara_register:
+  - {record_id: VARA-R-0001, entity_name: "Coral Ledger Exchange FZE", status: LICENSED, licence_ref: VL/26/01/001, activities: "Exchange Services;Broker-Dealer Services", website: coralledger.example, aliases: Coral Ledger}
+  - {record_id: VARA-R-0002, entity_name: "Saffron Chain Custody FZCO", status: IPA, licence_ref: IPA/26/02/003, activities: "Custody Services", website: saffronchain.example}
+  - {record_id: VARA-R-0003, entity_name: "Azure Dhow Digital FZE", status: LICENSED, licence_ref: VL/26/03/007, activities: "Custody Services;Transfer and Settlement Services", website: azuredhow.example}
+
+vara_unlicensed:
+  - {record_id: VARA-U-0001, entity_name: "Mirage Coin Hub", domains: "miragecoinhub.example;mirage-coin.example", date_listed: "2026-01-13"}
+  - {record_id: VARA-U-0002, entity_name: "Quick Dirham Crypto", domains: quickdirham.example, date_listed: "2025-11-02"}
+
+dfsa_register:
+  - {record_id: D-R-001, firm_name: "Lumen Crest Capital (DIFC) Limited", frn: F000000, status: authorised, permitted_services: "Advising on Financial Products;Arranging Deals in Investments", address: "Gate Village, DIFC, Dubai", website: lumencrest.example, phone: "+971 4 000 2000", email_domains: lumencrest.example}
+  - {record_id: D-R-002, firm_name: "Harbour Cedar Asset Management (DIFC) Limited", frn: F000001, status: authorised, permitted_services: "Managing Assets;Advising on Financial Products", address: "Index Tower, DIFC, Dubai", website: harbourcedar.example, phone: "+971 4 000 2001"}
+  - {record_id: D-R-003, firm_name: "Tidewater Prime Markets Limited", frn: F000002, status: withdrawn, permitted_services: "Dealing in Investments as Agent", address: "Gate District, DIFC, Dubai", website: tidewaterprime.example}
+
+dfsa_alerts:
+  - {record_id: D-A-007, alert_date: "2026-01-14", category: impersonated_authorised_firm, firm_named: "Lumen Crest Capital (DIFC) Limited", frn_named: F000000, contact_points_named: "lumencrest-capital.example;+44 7700 900789", legitimate_contacts_stated: "@lumencrest.example"}
+  - {record_id: D-A-008, alert_date: "2026-04-02", category: false_claim_of_authorisation, firm_named: "Zenith Harbor Partners", contact_points_named: zenithharbor.example}
+  - {record_id: D-A-009, alert_date: "2026-07-22", category: regulator_impersonation, contact_points_named: dfsa-verify.example}

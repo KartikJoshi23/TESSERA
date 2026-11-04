@@ -1,6 +1,10 @@
 # Activity taxonomy (implementation-plan.md Appendix B).
 # Keywords feed the RULES-ONLY baseline and give agents a shared vocabulary. Lower-case.
+# dfsa_terms map recorded DFSA services to these codes, so models get the result and never
+# the recorded services (implementation-plan.md §6.9). Terms are our own short stems. A
+# service that maps to nothing, or has a word in dfsa_unclear_terms, leaves scope unknown.
 version: 1
+dfsa_unclear_terms: [crypto, token, virtual, digital asset]
 groups:
   virtual_assets: Virtual assets and crypto
   capital_markets: Securities, derivatives, FX, advice and funds
@@ -43,22 +47,27 @@ activities:
     group: capital_markets
     label: Securities dealing or brokerage
     keywords: [stock trading, share trading, buy shares, equities, securities brokerage]
+    dfsa_terms: [dealing, arranging]
   - code: DER.FX_CFD
     group: capital_markets
     label: OTC derivatives, spot FX, CFDs
     keywords: [forex, fx trading, cfd, cfds, leverage, gold trading account, currency trading, derivatives, metatrader, mt4, mt5]
+    dfsa_terms: [dealing]
   - code: SEC.ADVICE
     group: capital_markets
     label: Investment advice or financial consultation
     keywords: [investment advice, financial consultation, portfolio advice, investment advisor, trading signals]
+    dfsa_terms: [advising]
   - code: SEC.PROMOTION
     group: capital_markets
     label: Introduction or promotion
     keywords: [introducing broker, referral, promotion, affiliate]
+    dfsa_terms: [arranging]
   - code: FUND.MGMT
     group: capital_markets
     label: Fund or portfolio management
     keywords: [fund management, managed account, portfolio management, investment fund, hedge fund]
+    dfsa_terms: [managing assets, collective investment]
   - code: COMMODITY
     group: capital_markets
     label: Gold or commodity contracts

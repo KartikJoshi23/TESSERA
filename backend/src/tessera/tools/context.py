@@ -13,6 +13,7 @@ from tessera.governance.policies import (
     load_decision_policy,
     load_sources_policy,
 )
+from tessera.knowledge import ActivityTaxonomy, load_activity_taxonomy
 
 
 @dataclass
@@ -22,6 +23,7 @@ class ToolContext:
     sources: SourcesPolicy
     decision: DecisionPolicy
     registry: DataRegistry
+    taxonomy: ActivityTaxonomy
 
     @classmethod
     def create(
@@ -35,6 +37,7 @@ class ToolContext:
             sources=sources,
             decision=load_decision_policy(settings.policies_dir),
             registry=registry or DataRegistry(settings, sources),
+            taxonomy=load_activity_taxonomy(settings.knowledge_dir),
         )
 
     def link(self, source_id: str, url: str | None = None) -> str:

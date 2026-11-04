@@ -32,8 +32,8 @@ The full design is in [implementation-plan.md](implementation-plan.md).
 | Part | Scope | State |
 |---|---|---|
 | 1 | Governance, data layer, deterministic tools | ✅ Done |
-| 2 | Protocol, blackboard, LLM runner, the seven agents | Next |
-| 3 | Crew orchestration, reconciliation, Verifier, streaming API | Planned |
+| 2 | Protocol, blackboard, LLM runner, the seven agents | Built and tested offline; live runs need a key |
+| 3 | Crew orchestration, reconciliation, Verifier, streaming API | Next |
 | 4 | Single-agent baselines and ablations | Planned |
 | 5 | Frontend (Orchestration Theater) | Planned |
 | 6 | Datasets, evaluation harness, pilot | Planned |
@@ -79,7 +79,7 @@ git config core.hooksPath .githooks
 | `RESTRICTED_DEMO` (default) | Restricted (DFSA) facts never load. Use it for anything shown to others |
 | `RESEARCH_INTERNAL` | Local research. DFSA facts load from `data/restricted/` and are masked before any model call |
 
-Copy `.env.example` to `.env` to set the mode and, from Part 2, the NVIDIA API key.
+Copy `.env.example` to `.env` to set the mode and the NVIDIA API key.
 
 ## Adding data (manual only)
 
@@ -90,6 +90,36 @@ Nothing downloads regulator data automatically. A person collects it by hand, fo
 cd backend
 uv run tessera-ingest cma_licensed ../data/inbox/cma_licensed/export.xlsx --retrieved-by KJ --retrieved-on 2026-11-05
 ```
+
+## Running against a live model
+
+Tests never need a key or a network. Live runs need one free key from
+[build.nvidia.com](https://build.nvidia.com), in `.env` at the repository root:
+
+```bash
+NVIDIA_API_KEY=<your key>
+```
+
+Then, from `backend/`:
+
+```bash
+uv run tessera-probe --trials 2 --models nvidia/nemotron-3-super-120b-a12b
+```
+
+```bash
+uv run tessera-probe
+```
+
+```bash
+uv run tessera-smoke --limit 3
+```
+
+- `tessera-probe` measures tool calling and JSON output for the candidate models in
+  `policies/models.yaml`, and writes a report to `runs/probe/`. With no arguments it runs 40
+  trials on each candidate, which takes a while.
+- `tessera-smoke` runs the crew on the fictional cases in `eval/smoke/`, in its own data folder
+  under `runs/smoke/`, and stops at a request cap (120 by default). It makes one pass with no
+  challenge rounds until Part 3 adds them. Its results say nothing about final performance.
 
 ## Free by design
 

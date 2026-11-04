@@ -219,6 +219,23 @@ def test_activity_taxonomy_loads():
     assert {"VA.EXCHANGE", "DER.FX_CFD", "LOAN.CREDIT", "OTHER"} <= codes
 
 
+@pytest.mark.parametrize(
+    ("services", "covered", "complete"),
+    [
+        (["Advising on Financial Products"], ["SEC.ADVICE"], True),
+        (["Managing Assets", "Advising on Financial Products"], ["FUND.MGMT", "SEC.ADVICE"], True),
+        # Nothing recorded, or something not understood, means unknown scope, never "not covered".
+        ([], [], False),
+        (["A service nobody has mapped"], [], False),
+        (["Advising on Financial Products", "Something new"], ["SEC.ADVICE"], False),
+        (["Advising on Crypto Tokens"], [], False),
+    ],
+)
+def test_recorded_dfsa_services_become_activity_codes(services, covered, complete):
+    taxonomy = load_activity_taxonomy(REPO_ROOT / "knowledge")
+    assert taxonomy.dfsa_scope(services) == (covered, complete)
+
+
 def test_restricted_evidence_cannot_hold_identifying_fields():
     with pytest.raises(ValueError, match="derived fields only"):
         mint_evidence(

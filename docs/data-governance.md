@@ -104,15 +104,24 @@ Record your initials in `recorded_by` or `--retrieved-by`, and the date in `YYYY
 
 Models run on NVIDIA's free API catalog, whose free endpoints may record inputs and outputs. So:
 
-- only synthetic offer text, public CMA and VARA facts, and placeholders are sent;
-- the masking gateway replaces every DFSA value with a placeholder such as `⟦R:FIRM-1⟧` before a
-  request leaves the machine, and an invariant test fails if any value slips through;
+- only synthetic offer text, public CMA and VARA facts, placeholders, and relations the tools
+  work out are sent. A relation says something about a masked firm in our own terms: its status,
+  its zone, which of our activity codes its recorded services cover, or an alert's category;
+- the masking gateway replaces every identifying DFSA value, including street-level address
+  parts, with a placeholder such as `⟦R:FIRM-1⟧` before a request leaves the machine, and an
+  invariant test fails if any value slips through;
+- recorded services and alert dates are never sent. A second test checks them against every
+  outgoing request and the event log. If a recorded service is not understood, the tool reports
+  scope as unknown, so extend `dfsa_terms` in `knowledge/taxonomy/activities.yaml` with our own
+  short terms, never with copied DFSA text;
 - no personal data is ever used.
 
 ## 6. Purge procedure
 
 To remove all DFSA data: delete `data/restricted/` and `datasets/restricted/`. Nothing else holds
-DFSA values. The system keeps working, and DFSA-dependent results become "Could not verify".
+DFSA values. Delete `runs/` as well: it keeps row references and masked relations, which should
+not outlive the facts. The system keeps working, and DFSA-dependent results become "Could not
+verify".
 
 ## 7. Release checklist (before sharing any artefact)
 

@@ -166,6 +166,25 @@ class VaraUnlicensedRecord(BaseRecord):
 
 
 DfsaStatus = Literal["authorised", "withdrawn", "suspended", "other"]
+#: Parts of an address that say only where it is. A zone identifies nobody, and the Jurisdiction
+#: agent needs it, so these stay visible when the rest of an address is masked.
+_GENERIC_ADDRESS_PARTS = frozenset(
+    {
+        "abu dhabi",
+        "abu dhabi global market",
+        "adgm",
+        "ajman",
+        "difc",
+        "dubai",
+        "dubai international financial centre",
+        "fujairah",
+        "ras al khaimah",
+        "sharjah",
+        "uae",
+        "umm al quwain",
+        "united arab emirates",
+    }
+)
 DfsaAlertCategory = Literal[
     "impersonated_authorised_firm",
     "false_claim_of_authorisation",
@@ -206,6 +225,9 @@ class DfsaRegisterFact(BaseRecord):
             values.append(RestrictedValue(self.frn, "reference", ref))
         values += [RestrictedValue(d.lstrip("@"), "domain", ref) for d in self.domains()]
         values += [RestrictedValue(p, "phone", ref) for p in self.phones()]
+        for part in (self.address or "").split(","):
+            if part.strip().casefold() not in _GENERIC_ADDRESS_PARTS:
+                values.append(RestrictedValue(part.strip(), "address", ref))
         return values
 
 

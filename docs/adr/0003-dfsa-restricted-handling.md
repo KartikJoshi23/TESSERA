@@ -15,7 +15,8 @@
   - Lookups are linear scans of a small table held in memory: no index, no embeddings.
   - Evidence keeps row IDs, not values.
   - Every DFSA link becomes the homepage.
-  - Every value is masked before any model call.
+  - Every identifying value is masked before any model call. Recorded services, addresses and
+    alert dates are not sent at all: a model gets tool-computed relations instead.
   - The commit guard keeps all of this out of the public repository.
 - **Consequences:**
   - Purging is one folder.

@@ -4,6 +4,7 @@ taxonomy. Rule cards are validated so that no citation can carry a DFSA deep lin
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -60,12 +61,16 @@ class Activity(_Frozen):
     group: str
     label: str
     keywords: tuple[str, ...]
+    #: Words that show a recorded DFSA service covers this activity. Our own mapping, lower-case.
+    dfsa_terms: tuple[str, ...] = ()
 
 
 class ActivityTaxonomy(_Frozen):
     version: int
     groups: dict[str, str]
     activities: tuple[Activity, ...]
+    #: A recorded DFSA service with one of these words is left unmapped, so scope stays unknown.
+    dfsa_unclear_terms: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _consistent(self) -> ActivityTaxonomy:
@@ -75,6 +80,28 @@ class ActivityTaxonomy(_Frozen):
         if unknown := {a.group for a in self.activities} - set(self.groups):
             raise ValueError(f"unknown activity groups: {sorted(unknown)}")
         return self
+
+    def dfsa_scope(self, services: Iterable[str]) -> tuple[list[str], bool]:
+        """The activity codes recorded DFSA services cover, and whether the list is complete.
+
+        Models see this result, never the recorded services (implementation-plan.md §6.9). The
+        list is complete only if services were recorded and every one of them was understood. If
+        it is not complete, an activity that is missing from the list has unknown scope.
+        """
+        covered: set[str] = set()
+        recorded = [service.casefold() for service in services]
+        complete = bool(recorded)
+        for service in recorded:
+            codes = {
+                activity.code
+                for activity in self.activities
+                if any(term in service for term in activity.dfsa_terms)
+            }
+            if not codes or any(term in service for term in self.dfsa_unclear_terms):
+                complete = False
+                continue
+            covered |= codes
+        return sorted(covered), complete
 
 
 def _yaml(path: Path) -> dict:

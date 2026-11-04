@@ -6,8 +6,8 @@ If a source has no snapshot yet, the lookup creates no evidence and says so (rea
 an empty table proves nothing.
 
 DFSA lookups run only in ``RESEARCH_INTERNAL`` mode. Their evidence holds row references and
-derived fields only; identifying values appear only in the summary, which is flagged
-``restricted`` and must be masked before any model call.
+derived fields only. Their summaries hold identifiers, which are masked before any model call,
+and relations worked out here. Recorded wording, addresses and alert dates never appear in them.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from tessera.normalize.domains import registrable_domain
 from tessera.normalize.phones import normalize_phone
 from tessera.protocol.evidence import EvidenceKind, EvidenceRecord, ToolResult, mint_evidence
 from tessera.tools.context import ToolContext
+from tessera.tools.extract import detect_zone
 from tessera.tools.matching import MATCH_RANK, match_name
 
 DFSA_UNAVAILABLE_MESSAGE = (
@@ -342,6 +343,37 @@ def _vara_fields(r: Any) -> dict[str, Any]:
     }
 
 
+def _dfsa_register_facts(ctx: ToolContext, r: DfsaRegisterFact) -> dict[str, Any]:
+    """What a model may learn from a register row.
+
+    Identifiers are masked by the gateway before any model call. Everything else is a relation
+    worked out here (§6.9): the recorded services and the address stay on this machine.
+    """
+    covered, complete = ctx.taxonomy.dfsa_scope(r.permitted_services)
+    return {
+        "firm_name": r.firm_name,
+        "frn": r.frn,
+        "status": r.status,
+        "zone": detect_zone(r.address) if r.address else "UNKNOWN",
+        "covers_activities": covered,
+        "scope_complete": complete,
+        "website_domain": registrable_domain(r.website),
+        "phone": _e164(r.phone),
+        "email_domains": _clean(registrable_domain(d) for d in r.email_domains),
+    }
+
+
+def _dfsa_alert_facts(r: DfsaAlertFact) -> dict[str, Any]:
+    """What a model may learn from an alert row. The report adds its date locally."""
+    return {
+        "category": r.category,
+        "firm_named": r.firm_named,
+        "frn_named": r.frn_named,
+        "named_contacts": list(r.contact_points_named),
+        "legitimate_contacts": list(r.legitimate_contacts_stated),
+    }
+
+
 def _unlicensed_fields(r: Any) -> dict[str, Any]:
     return {
         "record_id": r.record_id,
@@ -566,14 +598,7 @@ def dfsa_facts_lookup(
                 {
                     "evidence_id": ev.evidence_id,
                     "record_ref": ev.restricted_ref,
-                    "firm_name": r.firm_name,
-                    "frn": r.frn,
-                    "status": r.status,
-                    "permitted_services": list(r.permitted_services),
-                    "address": r.address,
-                    "website_domain": registrable_domain(r.website),
-                    "phone": _e164(r.phone),
-                    "email_domains": _clean(registrable_domain(d) for d in r.email_domains),
+                    **_dfsa_register_facts(ctx, r),
                     "match_type": hit.match_type,
                     "matched_on": hit.matched_on,
                     "score": hit.score,
@@ -618,12 +643,7 @@ def dfsa_facts_lookup(
                 {
                     "evidence_id": ev.evidence_id,
                     "record_ref": ev.restricted_ref,
-                    "alert_date": r.alert_date.isoformat(),
-                    "category": r.category,
-                    "firm_named": r.firm_named,
-                    "frn_named": r.frn_named,
-                    "named_contacts": list(r.contact_points_named),
-                    "legitimate_contacts": list(r.legitimate_contacts_stated),
+                    **_dfsa_alert_facts(r),
                     "matched_on": matched_on,
                 }
             )
@@ -732,7 +752,6 @@ def reverse_contact_lookup(ctx: ToolContext, value: str) -> ToolResult:
                             "source_id": "dfsa_alerts",
                             "evidence_id": ev.evidence_id,
                             "record_ref": ev.restricted_ref,
-                            "alert_date": r.alert_date.isoformat(),
                             "category": r.category,
                             "firm_named": r.firm_named,
                             "matched_on": label,
@@ -753,6 +772,25 @@ def reverse_contact_lookup(ctx: ToolContext, value: str) -> ToolResult:
         "unavailable": unavailable,
     }
     return ToolResult(tool=tool, evidence=tuple(evidence), summary=summary, restricted=restricted)
+
+
+def restricted_facts_for(ctx: ToolContext, evidence: EvidenceRecord) -> dict[str, Any]:
+    """What a model may learn from a restricted evidence record, resolved locally on demand.
+
+    The result holds identifiers. It must never be persisted, and it must pass through the masking
+    gateway before any model call. An empty result means there is nothing to show.
+    """
+    if not (evidence.restricted and ctx.registry.restricted_allowed):
+        return {}
+    # Analyses of restricted records are restricted too, but they have no row of their own.
+    if evidence.kind not in (EvidenceKind.REGISTER_ENTRY, EvidenceKind.ALERT_ENTRY):
+        return {}
+    record = ctx.registry.table(evidence.source_id).get(evidence.locator)
+    if isinstance(record, DfsaRegisterFact):
+        return _dfsa_register_facts(ctx, record)
+    if isinstance(record, DfsaAlertFact):
+        return _dfsa_alert_facts(record)
+    return {}
 
 
 def official_contacts_for(ctx: ToolContext, evidence: EvidenceRecord) -> ToolResult:

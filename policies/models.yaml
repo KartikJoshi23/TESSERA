@@ -1,0 +1,61 @@
+# Free model provider, decoding settings and limits (implementation-plan.md §5.3, §13.1).
+# Every condition in an experiment uses the same settings. See docs/adr/0004-free-llm-provider.md.
+version: 1
+
+provider:
+  name: nvidia-api-catalog
+  base_url: https://integrate.api.nvidia.com/v1
+  api_key_env: NVIDIA_API_KEY
+
+# The free tier allows about 40 requests per minute per model. We stay below that, with one key.
+rate_limit:
+  requests_per_minute: 35
+  max_concurrent: 4
+  max_attempts: 6
+  base_backoff_seconds: 2
+  max_backoff_seconds: 90
+  request_timeout_seconds: 240
+
+# Primary runs. Stability and self-consistency runs override the temperature (§11.4).
+decoding:
+  temperature: 0
+  seed: 20261103
+  max_tokens: 8192
+
+limits:
+  tool_calls_per_turn: 8
+  repair_attempts: 1
+  requests_per_case: 80
+
+# Working choices, listed on NVIDIA's /v1/models on 2026-11-04. `tessera-probe` confirms them, and
+# the final choice is recorded in ADR-0004 before any test-set run.
+roles:
+  primary: nvidia/nemotron-3-super-120b-a12b
+  capability_arm: nvidia/nemotron-3.5-lightning-30b-a3b
+  larger_single: nvidia/nemotron-3-ultra-550b-a55b
+  paraphrase: google/gemma-4-31b-it
+
+candidates:
+  primary:
+    - nvidia/nemotron-3-super-120b-a12b
+    - nvidia/nemotron-3.5-super-vl-120b-a12b
+    - moonshotai/kimi-k2.6
+  capability_arm:
+    - nvidia/nemotron-3.5-lightning-30b-a3b
+    - nvidia/nemotron-nano-3-30b-a3b
+  larger_single:
+    - nvidia/nemotron-3-ultra-550b-a55b
+    - mistralai/mistral-large-4-1t-a52b
+  paraphrase:
+    - google/gemma-4-31b-it
+    - openai/gpt-oss-20b
+    - z-ai/glm-5.3-flash
+    - deepseek-ai/deepseek-v4.1-flash
+
+# Provider-specific request fields, per model.
+model_options:
+  nvidia/nemotron-3-super-120b-a12b:
+    extra_body:
+      chat_template_kwargs:
+        enable_thinking: true
+      reasoning_budget: 4096

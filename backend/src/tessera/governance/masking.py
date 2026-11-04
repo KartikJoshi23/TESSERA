@@ -2,10 +2,10 @@
 
 Before any request leaves the machine, every restricted value is replaced with a stable
 placeholder such as ``⟦R:FIRM-1⟧``. Restricted values are DFSA firm names, reference numbers,
-domains, emails and phone numbers.
+domains, emails, phone numbers and street-level parts of addresses.
 
 * Generic parts of firm names stay visible: ``"Lumen Crest Capital (DIFC) Limited"`` becomes
-  ``"⟦R:FIRM-1⟧ (DIFC) Limited"``.
+  ``"⟦R:FIRM-1⟧ (DIFC) Limited"``. Zones in addresses stay visible in the same way.
 * Placeholders are numbered deterministically, so the same inputs always mask the same way.
 * Placeholders are restored only locally (:meth:`MaskingGateway.unmask`).
 * :meth:`MaskingGateway.leaked_values` powers the invariant test that no restricted value appears
@@ -23,7 +23,7 @@ from tessera.normalize.domains import domain_parts
 from tessera.normalize.names import normalize_name
 from tessera.normalize.phones import normalize_phone
 
-ValueKind = Literal["firm_name", "domain", "email", "phone", "reference"]
+ValueKind = Literal["firm_name", "domain", "email", "phone", "reference", "address"]
 
 _PREFIX: dict[str, str] = {
     "firm_name": "FIRM",
@@ -31,6 +31,7 @@ _PREFIX: dict[str, str] = {
     "email": "EMAIL",
     "phone": "PHONE",
     "reference": "REF",
+    "address": "ADDRESS",
 }
 _PLACEHOLDER = re.compile("(⟦R:[A-Z]+-\\d+⟧)")  # ⟦R:KIND-n⟧
 _SEP = r"[\s\-_.]*"
@@ -49,7 +50,8 @@ class RestrictedValue:
 @dataclass(frozen=True)
 class _Rule:
     placeholder: str
-    canonical: str
+    canonical: str  # normalised form, used to de-duplicate and order rules
+    display: str  # the value as recorded, restored by unmask()
     pattern: re.Pattern[str]
 
 
@@ -116,12 +118,22 @@ def _reference_rule(value: str) -> tuple[str, str, re.Pattern[str]] | None:
     return "reference", text, re.compile(rf"(?<!\w){re.escape(text)}(?!\w)", re.IGNORECASE)
 
 
+def _address_rule(value: str) -> tuple[str, str, re.Pattern[str]] | None:
+    words = value.split()
+    text = " ".join(words)
+    if len(text) < 4:
+        return None
+    body = r"\s+".join(re.escape(word) for word in words)
+    return "address", text, re.compile(rf"(?<!\w){body}(?!\w)", re.IGNORECASE)
+
+
 _BUILDERS = {
     "firm_name": _name_rule,
     "domain": _domain_rule,
     "email": _email_rule,
     "phone": _phone_rule,
     "reference": _reference_rule,
+    "address": _address_rule,
 }
 
 
@@ -144,15 +156,17 @@ class MaskingGateway:
             prefix = _PREFIX[kind]
             counters[prefix] = counters.get(prefix, 0) + 1
             placeholder = f"⟦R:{prefix}-{counters[prefix]}⟧"
-            rules.append(_Rule(placeholder, canonical, pattern))
+            surface = pattern.search(item.value)
+            display = surface.group(0) if surface else canonical
+            rules.append(_Rule(placeholder, canonical, display, pattern))
         # Longest values first, so a domain is replaced before a name that it contains.
         self._rules = sorted(rules, key=lambda r: (-len(r.canonical), r.placeholder))
-        self._canonical = {rule.placeholder: rule.canonical for rule in rules}
+        self._display = {rule.placeholder: rule.display for rule in rules}
 
     @property
     def placeholders(self) -> dict[str, str]:
-        """Placeholder → canonical value (local use only; never send this mapping out)."""
-        return dict(self._canonical)
+        """Placeholder → recorded value (local use only; never send this mapping out)."""
+        return dict(self._display)
 
     def __len__(self) -> int:
         return len(self._rules)
@@ -168,7 +182,7 @@ class MaskingGateway:
         return text
 
     def unmask(self, text: str) -> str:
-        return _PLACEHOLDER.sub(lambda m: self._canonical.get(m.group(1), m.group(1)), text)
+        return _PLACEHOLDER.sub(lambda m: self._display.get(m.group(1), m.group(1)), text)
 
     def mask_payload(self, payload: Any) -> Any:
         """Recursively mask every string in a JSON-like payload (dicts, lists, tuples)."""
