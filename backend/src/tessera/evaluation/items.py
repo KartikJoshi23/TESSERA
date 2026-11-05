@@ -20,6 +20,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from tessera.errors import PolicyError
 from tessera.governance.synthetic_gate import Channel, OfferInput
 from tessera.protocol.common import ResultCode
 
@@ -98,6 +99,10 @@ def write_items(path: Path, items: Iterable[EvalItem]) -> list[EvalItem]:
 
 
 def read_items(path: Path) -> list[EvalItem]:
+    if not path.is_file():
+        found = sorted(str(p) for p in path.glob("*/items.jsonl")) if path.is_dir() else []
+        hint = f" Inside that folder: {', '.join(found)}." if found else ""
+        raise PolicyError(f"no item file at {path}.{hint}")
     lines = path.read_text(encoding="utf-8").splitlines()
     return [EvalItem.model_validate_json(line) for line in lines if line.strip()]
 

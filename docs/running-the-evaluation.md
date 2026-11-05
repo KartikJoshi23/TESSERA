@@ -136,7 +136,8 @@ whether a hypothesis held or not.
 The Lab is built from two files in `frontend/src/data`. Both hold totals and no item text.
 
 ```bash
-uv run tessera-eval lab --fiction --items <messages.jsonl> --run-dir <run folder> \
+uv run tessera-eval lab --fiction --items <set>/dev/items.jsonl <set>/test/items.jsonl \
+  --run-dir <run folder> \
   --out ../frontend/src/data/pilot-comparison.json \
   --report ../frontend/src/data/pilot-report.json
 ```

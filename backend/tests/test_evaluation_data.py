@@ -516,6 +516,15 @@ def test_small_strata_still_add_up():
 # ------------------------------------------------------------------ review
 
 
+def test_a_folder_given_as_items_says_which_files_it_holds(tmp_path):
+    (tmp_path / "dev").mkdir()
+    (tmp_path / "dev" / "items.jsonl").write_text("", encoding="utf-8")
+    with pytest.raises(PolicyError, match="dev"):
+        read_items(tmp_path)
+    with pytest.raises(PolicyError, match="no item file"):
+        read_items(tmp_path / "nothing.jsonl")
+
+
 def test_a_review_sheet_is_blind(tmp_path):
     secret = item(gold_reasons=("HC1",), factors=("F7",), stratum="E9")
     sheet = export_sheet([secret], tmp_path / "sheet.csv", annotator="A", seed=1)
