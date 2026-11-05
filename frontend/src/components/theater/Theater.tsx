@@ -1,13 +1,12 @@
 "use client";
 
-import { ArrowRight, Download } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { useState } from "react";
 import { Masked } from "@/components/Masked";
+import { TraceButton } from "@/components/TraceButton";
 import { Notice, SyntheticBadge } from "@/components/ui";
-import { api } from "@/lib/api";
-import { saveJson } from "@/lib/download";
 import { useCaseEvents, useFoldedView, usePlayback } from "@/lib/hooks";
 import type { AgentKey, CaseView } from "@/lib/reducer";
 import {
@@ -54,14 +53,7 @@ function CaseHeader({ id, view }: { id: string; view: CaseView }) {
         <Metric label="evidence" value={view.evidence} />
       </div>
       <div className="ml-auto flex items-center gap-2">
-        <button
-          type="button"
-          className="button h-9!"
-          onClick={() => void api.trace(id).then((trace) => saveJson(`${id}-trace.json`, trace))}
-          title="The event log, masked as stored"
-        >
-          <Download size={15} aria-hidden /> Trace
-        </button>
+        <TraceButton id={id} label="Trace" />
         {view.final && (
           <Link href={`/cases/${encodeURIComponent(id)}/result`} className="button button-primary h-9!">
             Open the result <ArrowRight size={15} aria-hidden />

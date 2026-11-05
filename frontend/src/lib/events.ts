@@ -20,11 +20,19 @@ export type CaseEvent = z.infer<typeof eventSchema>;
 /** The last event a case can emit. A stream ends here. */
 export const TERMINAL = new Set(["result.finalized", "case.aborted", "case.interrupted"]);
 
+function fromJson(data: string): unknown {
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
 export function parseEvent(data: string): CaseEvent | null {
-  const raw: unknown = JSON.parse(data);
+  const raw = fromJson(data);
   const parsed = eventSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
-  const record = raw as { type?: string; case_id?: string };
+  const record = (raw ?? {}) as { type?: string; case_id?: string };
   if (record.type === "case.interrupted" && record.case_id) {
     // The server's own note that nothing is running this case. It is not a stored event.
     return {

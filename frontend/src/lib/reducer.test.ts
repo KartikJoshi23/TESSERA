@@ -258,4 +258,9 @@ describe("parsing", () => {
   it("refuses anything else", () => {
     expect(parseEvent(JSON.stringify({ nonsense: true }))).toBeNull();
   });
+
+  it("refuses text that is not JSON, without throwing", () => {
+    expect(parseEvent("{not json")).toBeNull();
+    expect(parseEvent("null")).toBeNull();
+  });
 });

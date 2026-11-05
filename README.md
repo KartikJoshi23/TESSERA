@@ -120,24 +120,29 @@ From `backend/`, `--fiction` runs the whole pipeline on the fictional world, wit
 
 ```bash
 uv run tessera-eval messages --fiction --per-label 60 --out ../runs/eval/messages
-uv run tessera-eval probe --fiction --items ../runs/eval/messages/dev/items.jsonl
+uv run tessera-eval probe --fiction --items ../runs/eval/messages/dev/items.jsonl ../runs/eval/restricted/messages/dev/items.jsonl
 ```
 
 | Command | What it does |
 |---|---|
+| `tessera-eval readiness` | Shows what is loaded, and what the real evaluation still needs |
 | `tessera-eval messages` | Builds labelled synthetic offers from the records. `--paraphrase` rewords half with a model of another family, and `--people` leaves a share to be written by hand |
 | `tessera-eval entities` | Builds the entity-level cards, strata E1 to E11, and lists any the policy disputes |
-| `tessera-eval sheet`, `agreement` | Exports a blind labelling sheet, and measures agreement between two filled sheets |
+| `tessera-eval written` | Brings in messages people wrote, through the same checks |
+| `tessera-eval sheet`, `agreement`, `settle` | Exports a blind labelling sheet, measures agreement between two filled sheets, and applies what discussion settled |
 | `tessera-eval probe` | Shows how far plain rules get, which says whether the messages are too easy |
 | `tessera-eval leakage` | Looks for record names in prompts and rule cards |
 | `tessera-eval run` | Runs the plan. It stops and resumes at any point. `--parallel`, `--hours` and `--max-requests` control a session |
 | `tessera-eval report` | Scores a run. Real-record and synthetic results stay apart |
 | `tessera-eval power` | Estimates how likely a true difference is to be found |
-| `tessera-eval freeze` | Records a finished set's hash |
+| `tessera-eval components` | Checks the name matcher, look-alike detector and contact extraction, with no model |
+| `tessera-eval freeze` | Records a finished set with its prompts, policies and plan. Real test items run only against a matching freeze |
 
 A run's records hold no gold labels. Labels are joined only when a run is scored. At the free tier's
-real rate of about 8 requests a minute, a full run takes about a week of continuous running. See
-[docs/pre-registration.md](docs/pre-registration.md).
+real rate of about 8 requests a minute, a full run takes about a week of continuous running.
+
+[docs/running-the-evaluation.md](docs/running-the-evaluation.md) gives every step in order, and
+[docs/pre-registration.md](docs/pre-registration.md) holds what is registered.
 
 ## Modes
 

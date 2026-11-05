@@ -33,6 +33,7 @@ from tessera.evaluation.leakage import scan
 from tessera.evaluation.messages import build_message_items, import_written
 from tessera.evaluation.metrics import summarize
 from tessera.evaluation.plan import jobs_for, load_plan, plan_hash
+from tessera.evaluation.readiness import readiness
 from tessera.evaluation.report import evaluation_report, outcomes_by_condition, render_text
 from tessera.evaluation.review import compare_labels, export_sheet, read_sheet, settle
 from tessera.evaluation.scenarios import (
@@ -331,6 +332,19 @@ def _report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _readiness(args: argparse.Namespace) -> int:
+    """What the real evaluation still needs. It changes nothing."""
+    stack, _, _ = _stack(args, model=False, log=_scratch_log())
+    world, taxonomy = _world(stack)
+    root = stack.settings.root
+    checks = readiness(stack.registry, world, taxonomy, root, seed=args.seed)
+    for check in checks:
+        print(f"[{'ok' if check.done else 'to do'}] {check.name}: {check.detail}")
+    waiting = sum(not check.done for check in checks)
+    print("Ready to build the datasets." if not waiting else f"{waiting} things still to do.")
+    return 0
+
+
 def _components(args: argparse.Namespace) -> int:
     """Whether the tools work, apart from any model (§11.2 C)."""
     stack, _, _ = _stack(args, model=False, log=_scratch_log())
@@ -388,6 +402,11 @@ def _lab(args: argparse.Namespace) -> int:
     ]
     args.out.write_text(json.dumps({"runs": runs}, indent=1) + "\n", encoding="utf-8")
     print(f"wrote {len(runs)} systems to {args.out}")
+    if args.report:
+        plan = load_plan(load_settings().root / "eval" / "plan.yaml")
+        report = evaluation_report(_load(args.items), load_records(args.run_dir), plan)
+        args.report.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")
+        print(f"wrote the report to {args.report}")
     return 0
 
 
@@ -470,6 +489,9 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--out", type=Path)
     report.add_argument("--split", choices=["dev", "test", "all"], help="needed if items span both")
 
+    ready = commands.add_parser("readiness", help="what the real evaluation still needs")
+    common(ready)
+
     components = commands.add_parser("components", help="check the tools, with no model")
     common(components)
     components.add_argument("--items", type=Path, nargs="*")
@@ -479,6 +501,7 @@ def build_parser() -> argparse.ArgumentParser:
     lab.add_argument("--items", type=Path, nargs="+", required=True)
     lab.add_argument("--run-dir", type=Path, required=True)
     lab.add_argument("--out", type=Path, required=True)
+    lab.add_argument("--report", type=Path, help="also write the full report, for the charts")
 
     power = commands.add_parser("power", help="how likely a true difference is to be found")
     power.add_argument("--items", type=int, default=224)
@@ -522,6 +545,8 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_run(args))
         if args.command == "report":
             return _report(args)
+        if args.command == "readiness":
+            return _readiness(args)
         if args.command == "components":
             return _components(args)
         if args.command == "lab":

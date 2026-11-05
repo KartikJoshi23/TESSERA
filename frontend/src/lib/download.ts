@@ -7,5 +7,5 @@ export function saveJson(name: string, value: unknown): void {
   link.href = url;
   link.download = name.replaceAll(/[^\w.-]/g, "_");
   link.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

@@ -3,6 +3,7 @@
 import { Hexagon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { useStatus } from "@/lib/hooks";
 
 const LINKS = [
@@ -18,8 +19,15 @@ const MODE_LABEL: Record<string, string> = {
   RESTRICTED_DEMO: "Restricted demo",
 };
 
+const RETRY_MS = 5000;
+
 function ModeBadge() {
-  const { data, error } = useStatus();
+  const { data, error, reload } = useStatus();
+  useEffect(() => {
+    if (!error) return;
+    const timer = setInterval(reload, RETRY_MS);
+    return () => clearInterval(timer);
+  }, [error, reload]);
   const label = error ? "API offline" : data ? (MODE_LABEL[data.mode] ?? data.mode) : "…";
   return (
     <span

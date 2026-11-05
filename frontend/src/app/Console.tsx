@@ -3,6 +3,7 @@
 import { ArrowRight, Play } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
+import { useSyncExternalStore } from "react";
 import { ResultBadge } from "@/components/ResultMark";
 import { hexPoints, hexRing } from "@/components/theater/geometry";
 import { ApiOffline } from "@/components/ui";
@@ -37,11 +38,20 @@ function heroTiles() {
 
 const TILES = heroTiles();
 
+const nothingToWatch = () => () => undefined;
+
 function HeroMosaic() {
   const reduced = useReducedMotion();
+  // The server cannot know someone's motion setting, so the tiles are drawn only in the browser.
+  const inBrowser = useSyncExternalStore(
+    nothingToWatch,
+    () => true,
+    () => false,
+  );
   return (
     <svg viewBox="-190 -180 380 360" className="h-auto w-full max-w-md" aria-hidden>
-      {TILES.map((tile) => (
+      {inBrowser &&
+        TILES.map((tile) => (
         <motion.g
           key={tile.index}
           initial={
@@ -65,7 +75,7 @@ function HeroMosaic() {
             strokeOpacity={0.75}
           />
         </motion.g>
-      ))}
+        ))}
     </svg>
   );
 }

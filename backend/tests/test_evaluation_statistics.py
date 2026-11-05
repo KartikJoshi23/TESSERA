@@ -4,6 +4,7 @@ import pytest
 
 from tessera.evaluation.metrics import (
     Outcome,
+    by_group,
     confusion,
     cost_weighted_error,
     coverage,
@@ -221,6 +222,19 @@ def test_veto_scores_judge_the_proposal_not_the_final_answer():
     assert scores["veto_precision"] == pytest.approx(2 / 3)
     assert scores["veto_recall"] == pytest.approx(1 / 2)
     assert scores["rescue_rate"] == pytest.approx(1 / 2)
+
+
+def test_a_breakdown_counts_an_item_under_each_of_its_factors():
+    groups = by_group(
+        [
+            outcome(X, X, factors=("F1", "F7")),
+            outcome(X, C, factors=("F7",)),
+            outcome(C, C, stratum="E7"),
+        ]
+    )
+    assert groups["F7"]["items"] == 2 and groups["F7"]["accuracy"] == 0.5
+    assert groups["F7"]["false_reassurance"] == 0.5
+    assert groups["E7"]["accuracy"] == 1.0
 
 
 def test_reason_recall_reads_only_right_answers():

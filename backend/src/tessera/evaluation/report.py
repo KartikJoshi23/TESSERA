@@ -121,6 +121,52 @@ def compare(table: dict[str, dict[str, Outcome]], comparison: Comparison) -> dic
     return report
 
 
+#: A system's own interval is for reading a chart. Fewer draws are plenty for that.
+_SYSTEM_RESAMPLES = 2_000
+
+
+def system_intervals(outcomes: Sequence[Outcome]) -> dict[str, list[float]]:
+    """How far each headline number could move on other items like these."""
+    frr = paired_bootstrap(
+        outcomes, lambda s: false_reassurance_rate(s) or 0.0, resamples=_SYSTEM_RESAMPLES
+    )
+    f1 = paired_bootstrap(outcomes, lambda s: macro_f1(s) or 0.0, resamples=_SYSTEM_RESAMPLES)
+    return {"false_reassurance_rate": [frr.low, frr.high], "macro_f1": [f1.low, f1.high]}
+
+
+def interaction(
+    table: dict[str, dict[str, Outcome]], comparison: Comparison, focus: Sequence[str]
+) -> dict[str, Any]:
+    """H5: is the difference between two systems larger on the focus factors than elsewhere?
+
+    The estimate is the difference on focus items minus the difference on the rest. An interval
+    below zero means the first system gains more on false reassurance where H5 says it should.
+    """
+    wanted = set(focus)
+    pairs = _pairs(table, comparison)
+
+    def gap(sample: Sequence[_Pair]) -> float:
+        inside = [pair for pair in sample if wanted & set(pair[0].factors)]
+        outside = [pair for pair in sample if not wanted & set(pair[0].factors)]
+        if not inside or not outside:
+            return 0.0
+        return _difference(comparison.metric, inside) - _difference(comparison.metric, outside)
+
+    inside = [pair for pair in pairs if wanted & set(pair[0].factors)]
+    if not inside or len(inside) == len(pairs):
+        return {"tested": False}
+    interval = paired_bootstrap(pairs, gap)
+    return {
+        "tested": True,
+        "focus": sorted(wanted),
+        "focus_items": len(inside),
+        "other_items": len(pairs) - len(inside),
+        "difference": interval.estimate,
+        "ci_low": interval.low,
+        "ci_high": interval.high,
+    }
+
+
 def stability(
     items: Sequence[EvalItem],
     records: Sequence[dict[str, Any]],
@@ -185,12 +231,17 @@ def level_report(
         "level": level.value,
         "items": len(chosen),
         "systems": {
-            name: {**summarize(list(found.values())), "not_yet_run": len(chosen) - len(found)}
+            name: {
+                **summarize(list(found.values())),
+                "not_yet_run": len(chosen) - len(found),
+                "intervals": system_intervals(list(found.values())),
+            }
             for name, found in table.items()
         },
         "registered": registered,
         "secondary": secondary,
         "non_inferiority": _non_inferiority(registered, plan.non_inferiority_margin),
+        "interaction": interaction(table, plan.registered[0], plan.focus_factors),
         "stability": [
             sampled_stability(chosen, records),
             *(

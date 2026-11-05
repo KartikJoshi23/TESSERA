@@ -181,7 +181,8 @@ export function useLoad<T>(load: () => Promise<T>): Load<T> {
     };
     // `nonce` is how `reload` asks again.
   }, [load, nonce]);
-  return { data, error, reload: () => setNonce((value) => value + 1) };
+  const reload = useCallback(() => setNonce((value) => value + 1), []);
+  return { data, error, reload };
 }
 
 export const useStatus = () => useLoad(api.status);

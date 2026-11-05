@@ -31,6 +31,7 @@ from tessera.evaluation.items import (
 )
 from tessera.evaluation.labelling import policy_label, with_quotes_from
 from tessera.evaluation.messages import build_message_items, import_written
+from tessera.evaluation.readiness import prompt_check, readiness
 from tessera.evaluation.review import (
     compare_labels,
     export_sheet,
@@ -64,7 +65,7 @@ from tessera.llm.testing import ScriptedTransport, chat_reply
 from tessera.llm.types import TransientLLMError
 from tessera.protocol.common import ResultCode
 
-from .conftest import REPO_ROOT
+from .conftest import REPO_ROOT, make_settings
 from .scripted import in_loop
 
 TODAY = FICTION_DATE
@@ -620,6 +621,34 @@ def test_a_missed_contact_counts_against_extraction():
 def test_a_score_copes_with_nothing_to_measure():
     empty = contact_extraction([])
     assert empty.recall is None and empty.precision is None
+
+
+# ------------------------------------------------------------------ readiness
+
+
+def test_readiness_reads_what_is_loaded_and_what_is_missing(world, stack, taxonomy):
+    checks = readiness(stack.registry, world, taxonomy, REPO_ROOT, seed=1)
+    named = {check.name: check for check in checks}
+    assert named["CMA Licensed Companies"].done
+    assert named["Stratum E7"].done is False and " of 40" in named["Stratum E7"].detail
+
+
+def test_readiness_says_when_nothing_is_loaded(tmp_path, taxonomy):
+    empty = build_stack(
+        make_settings(tmp_path / "empty"), ScriptedTransport([]), EventStore(), MODELS
+    )
+    world = load_world(empty.registry, taxonomy)
+    checks = readiness(empty.registry, world, taxonomy, REPO_ROOT, seed=1)
+    assert world.firms == ()
+    assert not [c for c in checks if c.done and c.name != "Equal prompt revisions"]
+
+
+def test_unequal_prompt_revisions_are_flagged(tmp_path):
+    log = tmp_path / "CHANGELOG.md"
+    log.write_text("**Crew: 4 revisions. Single agent: 1.**", encoding="utf-8")
+    assert prompt_check(log).done is False
+    log.write_text("**Crew: 4 revisions. Single agent: 4.**", encoding="utf-8")
+    assert prompt_check(log).done is True
 
 
 # ------------------------------------------------------------------ the entity-level set

@@ -41,3 +41,6 @@ secondary:
 
 # H2 holds if the crew's macro-F1 is no more than this far below the baseline's.
 non_inferiority_margin: 0.02
+
+# H5: copied identifiers, cross-jurisdiction and scope cases.
+focus_factors: [F1, F6, F7]

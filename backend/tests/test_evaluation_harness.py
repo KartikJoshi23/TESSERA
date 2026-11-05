@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import csv
 import json
+import re
 from datetime import date
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from tessera.evaluation.plan import Job, jobs_for, load_plan, plan_hash
 from tessera.evaluation.report import (
     compare,
     evaluation_report,
+    interaction,
     level_report,
     outcomes_by_condition,
     render_text,
@@ -433,6 +435,69 @@ def test_the_baseline_s_stability_comes_from_its_five_samples():
     result = sampled_stability(items, records)
     assert result["condition"] == "SA-BASE"
     assert result["items"] == 2 and result["flip_rate"] == 0.5
+
+
+def test_each_system_has_intervals_for_its_headline_numbers():
+    items, records = items_and_records()
+    report = level_report(items, records, PLAN, Level.MESSAGE)
+    low, high = report["systems"]["CREW-FULL"]["intervals"]["macro_f1"]
+    assert low <= high
+
+
+def test_h5_compares_the_focus_factors_with_the_rest():
+    items = [smoke_item(case) for case in ("S09", "S10", "S11", "S16", "S14", "S15", "S18", "S19")]
+    focus = [item for item in items if {"F1", "F6", "F7"} & set(item.factors)]
+    assert focus and len(focus) < len(items)
+    records = [record(item.item_id, "CREW-FULL", item.gold_label.value) for item in items] + [
+        record(item.item_id, "SA-BASE", "CONSISTENT" if item in focus else item.gold_label.value)
+        for item in items
+    ]
+    result = interaction(
+        outcomes_by_condition(items, records), PLAN.registered[0], ("F1", "F6", "F7")
+    )
+    assert result["tested"] is True
+    assert result["difference"] == pytest.approx(-1.0)
+    assert result["focus_items"] == len(focus)
+
+
+def test_h5_needs_items_on_both_sides():
+    items = [smoke_item("S01")]
+    records = [record("S01", "CREW-FULL", "CONSISTENT"), record("S01", "SA-BASE", "CONSISTENT")]
+    table = outcomes_by_condition(items, records)
+    assert interaction(table, PLAN.registered[0], ("F1",)) == {"tested": False}
+
+
+def test_the_lab_reads_only_what_the_report_writes():
+    items, records = items_and_records()
+    report = level_report(items, records, PLAN, Level.MESSAGE)
+    source = (REPO_ROOT / "frontend" / "src" / "lib" / "evaluation.ts").read_text(encoding="utf-8")
+
+    def fields(name: str) -> set[str]:
+        body = re.search(rf"interface {name} \{{(.*?)\n\}}", source, re.DOTALL)
+        assert body is not None
+        return set(re.findall(r"^  (\w+)\??:", body.group(1), re.MULTILINE))
+
+    assert fields("SystemReport") <= set(report["systems"]["CREW-FULL"])
+    assert fields("LevelReport") <= set(report)
+    assert fields("ComparisonReport") - {"p_holm"} <= set(report["registered"][0])
+
+
+def test_the_lab_names_real_coordination_measures():
+    items, records = items_and_records()
+    telemetry = {
+        "challenges": {"sent": 1, "revisions": 1},
+        "verifier": {"vetoes": 0},
+        "conflicts": {"total": 1},
+        "conformity_flags": 0,
+        "repairs": 0,
+    }
+    records = [{**r, "telemetry": telemetry, "proposals": []} for r in records]
+    report = level_report(items, records, PLAN, Level.MESSAGE)
+    charts = (REPO_ROOT / "frontend" / "src" / "app" / "lab" / "Charts.tsx").read_text(
+        encoding="utf-8"
+    )
+    named = re.findall(r'\["([a-z_]+)", "', charts)
+    assert named and set(named) <= set(report["systems"]["CREW-FULL"]["coordination"])
 
 
 def test_a_missing_system_is_reported_as_no_pairs():

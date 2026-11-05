@@ -1,15 +1,15 @@
 "use client";
 
-import { ArrowLeft, Check, Download, ExternalLink, Minus, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, Minus, ShieldAlert } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { RESULT_ICON } from "@/components/ResultMark";
 import { hexPoints, hexRing } from "@/components/theater/geometry";
 import { Masked } from "@/components/Masked";
+import { TraceButton } from "@/components/TraceButton";
 import { ApiOffline, Notice, SyntheticBadge } from "@/components/ui";
 import { api, type Chip, type Report } from "@/lib/api";
-import { saveJson } from "@/lib/download";
 import { useCaseEvents, useLoad } from "@/lib/hooks";
 import { type CaseView, fold } from "@/lib/reducer";
 import { AGENT_LOOK, conditionName, CONFLICT_LABEL, resultLook } from "@/lib/vocabulary";
@@ -362,14 +362,9 @@ export function Dossier({ id }: { id: string }) {
         <span className="data text-sm text-text-2">{data.case_id}</span>
         {data.synthetic && <SyntheticBadge />}
         <span className="text-sm text-text-2">{conditionName(data.condition)}</span>
-        <button
-          type="button"
-          className="button ml-auto h-9!"
-          onClick={() => void api.trace(id).then((trace) => saveJson(`${id}-trace.json`, trace))}
-          title="The event log, masked as stored. The report itself is not exported."
-        >
-          <Download size={15} aria-hidden /> Masked trace
-        </button>
+        <span className="ml-auto flex items-center gap-3">
+          <TraceButton id={id} label="Masked trace" />
+        </span>
       </div>
 
       <ResultHero report={data} />

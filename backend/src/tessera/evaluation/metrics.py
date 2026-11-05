@@ -264,6 +264,26 @@ def coordination(outcomes: Sequence[Outcome]) -> dict[str, float | None]:
     }
 
 
+def by_group(outcomes: Sequence[Outcome]) -> dict[str, dict[str, float | int | None]]:
+    """Accuracy and false reassurance for each factor or stratum.
+
+    An item with several factors counts under each. These breakdowns are exploratory, apart from
+    the registered interaction test, and they are labelled that way.
+    """
+    groups: dict[str, list[Outcome]] = {}
+    for outcome in outcomes:
+        for group in outcome.factors or ((outcome.stratum,) if outcome.stratum else ()):
+            groups.setdefault(group, []).append(outcome)
+    return {
+        group: {
+            "items": len(members),
+            "accuracy": _ratio(sum(o.gold is o.predicted for o in members), len(members)),
+            "false_reassurance": false_reassurance_rate(members),
+        }
+        for group, members in sorted(groups.items())
+    }
+
+
 def summarize(outcomes: Sequence[Outcome]) -> dict[str, Any]:
     """Every metric for one system on one level of the evaluation."""
     return {
@@ -287,4 +307,5 @@ def summarize(outcomes: Sequence[Outcome]) -> dict[str, Any]:
         "compute": compute_cost(outcomes),
         "coordination": coordination(outcomes),
         "confusion": confusion(outcomes),
+        "by_group": by_group(outcomes),
     }

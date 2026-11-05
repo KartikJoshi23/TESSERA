@@ -3,9 +3,17 @@
 import { useMemo, useState } from "react";
 import { Notice, PageTitle } from "@/components/ui";
 import pilot from "@/data/pilot-comparison.json";
+import pilotReport from "@/data/pilot-report.json";
 import smoke from "@/data/smoke-comparison.json";
+import evaluation from "@/data/evaluation.json";
+import type { EvaluationReport } from "@/lib/evaluation";
 import { type SmokeCase, type SmokeRow, type SmokeRun, summarize } from "@/lib/smoke";
 import { conditionName, RESULT_LOOK } from "@/lib/vocabulary";
+import { EvaluationCharts } from "./Charts";
+
+/** Empty until Part 7. It holds aggregates only, so it can be committed after a release review. */
+const FINAL = evaluation as EvaluationReport;
+const PILOT = pilotReport as EvaluationReport;
 
 type Tab = "entity" | "message" | "smoke";
 
@@ -139,7 +147,8 @@ function Cell({ item, onHover }: { item: SmokeCase; onHover: (item: SmokeCase | 
 
 function Matrix({ rows }: { rows: SmokeRow[] }) {
   const [hovered, setHovered] = useState<Hovered | null>(null);
-  const names = rows[0]?.cases.map((item) => item.case) ?? [];
+  // Systems can have run different cases, so a column is found by name and never by position.
+  const names = [...new Set(rows.flatMap((row) => row.cases.map((item) => item.case)))].sort();
   return (
     <figure className="glass flex flex-col gap-3 p-5">
       <figcaption>
@@ -174,7 +183,7 @@ function Matrix({ rows }: { rows: SmokeRow[] }) {
               </th>
               {names.map((name) => (
                 <th key={name} scope="col" className="data px-px pb-1 text-[9px] font-normal text-text-3">
-                  {name.slice(1)}
+                  {name.replace(/^M-/, "").replace(/^S/, "").replace(/^[A-Z]+-0*/, "")}
                 </th>
               ))}
             </tr>
@@ -185,15 +194,22 @@ function Matrix({ rows }: { rows: SmokeRow[] }) {
                 <th scope="row" className="pr-3 text-left text-[13px] font-normal whitespace-nowrap text-text-2">
                   {conditionName(row.condition)}
                 </th>
-                {row.cases.map((item) => (
-                  <Cell
-                    key={item.case}
-                    item={item}
-                    onHover={(value) =>
-                      setHovered(value && { item: value, condition: row.condition })
-                    }
-                  />
-                ))}
+                {names.map((name) => {
+                  const item = row.cases.find((entry) => entry.case === name);
+                  return item ? (
+                    <Cell
+                      key={name}
+                      item={item}
+                      onHover={(value) =>
+                        setHovered(value && { item: value, condition: row.condition })
+                      }
+                    />
+                  ) : (
+                    <td key={name} className="p-px">
+                      <span className="sr-only">{name}: not run</span>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -308,6 +324,9 @@ function SmokeResults() {
         <Notice title="No finished runs yet">Nothing has finished on this set.</Notice>
       ) : (
         <>
+          {chosen === "pilot" && PILOT.levels.message && (
+            <EvaluationCharts level={PILOT.levels.message} />
+          )}
           <div className="grid gap-4 lg:grid-cols-2">
             <Bars
               title="Agreement with the hand labels"
@@ -315,7 +334,7 @@ function SmokeResults() {
               rows={rows}
               value={(row) => row.agreed}
               text={(row) => `${row.agreed}/${row.total}`}
-              largest={rows[0]?.total}
+              largest={Math.max(...rows.map((row) => row.total))}
             />
             <Bars
               title="Model requests"
@@ -363,8 +382,18 @@ export function Lab() {
       </div>
 
       <div id="lab-panel" role="tabpanel" aria-labelledby={`lab-${tab}`}>
-        {tab === "entity" && <NoResults title="Entity-level evaluation" />}
-        {tab === "message" && <NoResults title="Message-level evaluation" />}
+        {tab === "entity" &&
+          (FINAL.levels.entity ? (
+            <EvaluationCharts level={FINAL.levels.entity} />
+          ) : (
+            <NoResults title="Entity-level evaluation" />
+          ))}
+        {tab === "message" &&
+          (FINAL.levels.message ? (
+            <EvaluationCharts level={FINAL.levels.message} />
+          ) : (
+            <NoResults title="Message-level evaluation" />
+          ))}
         {tab === "smoke" && <SmokeResults />}
       </div>
     </div>

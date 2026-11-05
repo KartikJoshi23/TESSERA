@@ -283,7 +283,7 @@ def near_misses(world: World, taxonomy: ActivityTaxonomy, *, seed: int) -> list[
 
 
 _Build = Callable[[World, ActivityTaxonomy], list[Card]]
-_STRATA: tuple[_Build, ...] = (
+STRATA: tuple[_Build, ...] = (
     impersonated,
     false_claims,
     unlicensed,
@@ -311,7 +311,7 @@ def build_entity_items(
     seed: int,
     cbuae_names: Sequence[str] = (),
 ) -> EntitySet:
-    cards = [card for build in _STRATA for card in build(world, taxonomy)]
+    cards = [card for build in STRATA for card in build(world, taxonomy)]
     cards += near_misses(world, taxonomy, seed=seed)
     cards += outside_phase_one(cbuae_names, taxonomy)
     items: list[EvalItem] = []

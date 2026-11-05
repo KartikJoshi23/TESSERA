@@ -49,6 +49,8 @@ class RunPlan(BaseModel):
     #: H3 and H4. Holm-Bonferroni runs over this family.
     secondary: tuple[Comparison, ...]
     non_inferiority_margin: float
+    #: H5: the factors where any advantage is expected to sit.
+    focus_factors: tuple[str, ...]
 
 
 def load_plan(path: Path) -> RunPlan:

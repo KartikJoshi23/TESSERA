@@ -281,6 +281,19 @@ test.describe("the theater", () => {
     await context.close();
   });
 
+  test("hydrates cleanly for someone who asks for less motion", async ({ browser, request }) => {
+    const id = await startCase(request);
+    const context = await browser.newContext({ reducedMotion: "reduce" });
+    const page = await context.newPage();
+    const errors = collectErrors(page);
+    for (const route of ["/", `/cases/${id}`, `/cases/${id}/result`]) {
+      await page.goto(`http://localhost:3000${route}`);
+      await page.getByTestId("mode-badge").filter({ hasNotText: "…" }).waitFor();
+    }
+    await context.close();
+    expect(errors).toEqual([]);
+  });
+
   test("says so when a case does not exist", async ({ page }) => {
     await page.goto("/cases/no-such-case");
     await expect(page.getByText("This case could not be opened")).toBeVisible();
@@ -381,11 +394,24 @@ test.describe("smaller screens", () => {
   }
 });
 
+test.describe("the export", () => {
+  test("says so when the trace cannot be fetched", async ({ page, request }) => {
+    const id = await startCase(request);
+    await page.goto(`/cases/${id}`);
+    await expect(page.getByTestId("result-tile")).toHaveAttribute("data-result", "CONFLICTS");
+    await page.route("**/trace", (route) => route.abort());
+    await page.getByRole("button", { name: "Trace" }).click();
+    await expect(page.getByText("The trace could not be fetched.")).toBeVisible();
+  });
+});
+
 test.describe("when the API is away", () => {
   test("says what to do", async ({ page }) => {
     await page.route("**/api/**", (route) => route.abort());
     await page.goto("/intake");
     await expect(page.getByText("The local API is not answering")).toBeVisible();
     await expect(page.getByTestId("mode-badge")).toHaveText("API offline");
+    await page.unroute("**/api/**");
+    await expect(page.getByTestId("mode-badge")).not.toHaveText("API offline", { timeout: 8000 });
   });
 });
