@@ -352,6 +352,14 @@ def test_the_pipeline_runs_from_records_to_a_report(monkeypatch, tmp_path, capsy
     assert "MESSAGE LEVEL" in capsys.readouterr().out
     saved = json.loads(report.read_text("utf-8"))
     assert "RULES-ONLY" in saved["levels"]["message"]["systems"]
+    lab = tmp_path / "lab.json"
+    arguments = ["lab", "--items", *files, "--run-dir", str(run_dir), "--out", str(lab)]
+    assert main([*arguments, "--fiction"]) == 0
+    capsys.readouterr()
+    written = lab.read_text("utf-8")
+    assert '"condition": "RULES-ONLY"' in written
+    assert "Lumen Crest" not in written and "Falcon Ridge" not in written
+    assert main(arguments) == 2
 
 
 def test_the_power_command_answers(capsys):

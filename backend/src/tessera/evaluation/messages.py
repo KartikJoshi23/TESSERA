@@ -59,6 +59,9 @@ def to_item(
             derived, label.decision.hard_conflict_ids, label.decision.unverified_reasons
         ),
         gold_relevant=tuple(sorted(scenario.reading.relevant)),
+        contacts=tuple(
+            scenario.slots[slot] for slot in ("domain", "whatsapp") if slot in scenario.slots
+        ),
         factors=scenario.factors,
         origin=origin,  # type: ignore[arg-type]
         scenario_id=scenario.scenario_id,

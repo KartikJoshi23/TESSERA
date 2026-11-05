@@ -14,6 +14,7 @@ that reads from one that only matches.
 from __future__ import annotations
 
 import random
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -465,6 +466,108 @@ def injected_instruction(world: World, rng: random.Random, scenario_id: str) -> 
     )
 
 
+#: Ways an Arabic name gets spelled in English. Each is a real, common variation.
+_SPELLINGS = (
+    (r"\bAl\b", "El"),
+    (r"\bEl\b", "Al"),
+    (r"oo", "u"),
+    (r"ou", "u"),
+    (r"ee", "i"),
+    (r"dh", "z"),
+    (r"kh", "k"),
+    (r"sh", "ch"),
+)
+
+
+def respelled(name: str) -> str | None:
+    """The same name in another common transliteration, if it has one."""
+    for pattern, replacement in _SPELLINGS:
+        changed = re.sub(pattern, replacement, name, count=1)
+        if changed != name:
+            return changed
+    return None
+
+
+def variant_spelling(world: World, rng: random.Random, scenario_id: str) -> Scenario | None:
+    """F12: a genuine firm, its name respelled, and its reference to confirm who it is."""
+    firms = [firm for firm in _usable(world) if firm.reference and respelled(firm.short_name)]
+    if not firms:
+        return None
+    firm = rng.choice(firms)
+    assert firm.domain is not None
+    name = respelled(firm.short_name)
+    reading, slots, keep = _base(
+        firm, _in_scope(firm, rng), rng, claim=True, reference=True, name=name
+    )
+    slots["domain"] = firm.domain
+    return Scenario(
+        scenario_id,
+        "variant_spelling",
+        ResultCode.CONSISTENT,
+        ("F9", "F12"),
+        reading,
+        slots,
+        (*keep, firm.domain),
+        firm.restricted,
+    )
+
+
+def name_dropping(world: World, rng: random.Random, scenario_id: str) -> Scenario | None:
+    """F13: a listed entity that also names a licensed firm, to borrow its standing."""
+    base = listed_entity(world, rng, scenario_id)
+    firms = _usable(world)
+    if base is None or not firms:
+        return None
+    partner = rng.choice(firms)
+    line = rng.choice(
+        (
+            f"We work hand in hand with {partner.short_name}.",
+            f"Our partners include {partner.short_name}.",
+        )
+    )
+    return Scenario(
+        scenario_id,
+        "name_dropping",
+        base.intended,
+        ("F3", "F13"),
+        base.reading,
+        {**base.slots, "aside": line},
+        (*base.keep, partner.short_name),
+        partner.restricted,
+    )
+
+
+def mixed_jurisdiction(world: World, rng: random.Random, scenario_id: str) -> Scenario | None:
+    """F6: a DIFC firm and its DIFC address, offering virtual assets, which it may not."""
+    firms = [
+        firm
+        for firm in world.of("DFSA")
+        if firm.status == "active" and firm.domain and firm.address and not firm.covers_virtual
+    ]
+    if not firms:
+        return None
+    firm = rng.choice(firms)
+    assert firm.domain is not None and firm.address is not None
+    code = rng.choice(("VA.EXCHANGE", "VA.YIELD", "VA.CUSTODY"))
+    reading, slots, keep = _base(firm, code, rng, claim=True, reference=False)
+    slots |= {"domain": firm.domain, "address": firm.address}
+    return Scenario(
+        scenario_id,
+        "mixed_jurisdiction",
+        ResultCode.CONFLICTS,
+        ("F6", "F7"),
+        Reading(
+            activities=reading.activities,
+            relevant={"DFSA": "primary", "VARA": "possible", "CMA": "possible"},
+            firm=reading.firm,
+            regulator=reading.regulator,
+        ),
+        slots,
+        (*keep, firm.domain, firm.address),
+        True,
+    )
+
+
 def unknown_firm(world: World, rng: random.Random, scenario_id: str) -> Scenario | None:
     """F3: a firm on no record, on a site that imitates nothing."""
     name, domain = _coined_firm(rng)
@@ -542,7 +645,7 @@ def outside_coverage(world: World, rng: random.Random, scenario_id: str) -> Scen
 
 
 RECIPES: dict[ResultCode, tuple[Recipe, ...]] = {
-    ResultCode.CONSISTENT: (genuine, genuine_under_pressure),
+    ResultCode.CONSISTENT: (genuine, genuine_under_pressure, variant_spelling),
     ResultCode.CONFLICTS: (
         copied_identifiers,
         imitated_domain,
@@ -553,6 +656,8 @@ RECIPES: dict[ResultCode, tuple[Recipe, ...]] = {
         regulator_notice,
         false_authorisation,
         injected_instruction,
+        name_dropping,
+        mixed_jurisdiction,
     ),
     ResultCode.UNVERIFIED: (unknown_firm, secondary_domain, off_platform, outside_coverage),
 }

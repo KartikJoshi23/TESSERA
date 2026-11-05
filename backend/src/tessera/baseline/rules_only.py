@@ -364,7 +364,7 @@ _CLAIM_BEFORE = re.compile(
 _BENEFICIARY = re.compile(r"beneficiary\s+([A-Z][\w&.-]*(?:\s+[A-Z][\w&.-]*)*)")
 _WALLET = re.compile(r"\b(?:wallet|usdt|trc20|erc20)\b", re.IGNORECASE)
 #: Words a register uses for an activity, in our own short terms.
-_REGISTER_WORDS = {
+REGISTER_WORDS = {
     "DER.FX_CFD": ("otc derivatives", "currencies"),
     "SEC.BROKERAGE": ("securities dealing", "trading broker"),
     "SEC.ADVICE": ("financial consultation",),
@@ -508,7 +508,7 @@ class RulesOnly(ToolCrew):
         if regulator == "VARA" and official_status(record, facts) == "ipa":
             return "no", "SCOPE-VARA-01"
         activities = " ".join(record.fields.get("activities", [])).casefold()
-        words = _REGISTER_WORDS.get(code)
+        words = REGISTER_WORDS.get(code)
         if not activities or words is None:
             return "unknown", SCOPE_RULES[regulator]
         if any(word in activities for word in words):

@@ -3,6 +3,7 @@
 Everything here runs on the fictional world, through the same code real records will use.
 """
 
+import asyncio
 import random
 import re
 
@@ -12,6 +13,11 @@ from tessera.agents.crew import build_stack
 from tessera.blackboard.store import EventStore
 from tessera.devdata import FICTION_DATE
 from tessera.errors import PolicyError
+from tessera.evaluation.components import (
+    contact_extraction,
+    lookalike_detector,
+    name_matcher,
+)
 from tessera.evaluation.entities import build_entity_items
 from tessera.evaluation.firms import load_world
 from tessera.evaluation.items import (
@@ -31,7 +37,7 @@ from tessera.evaluation.review import (
     read_sheet,
     settle,
 )
-from tessera.evaluation.scenarios import lookalike, sample_scenarios
+from tessera.evaluation.scenarios import lookalike, respelled, sample_scenarios
 from tessera.evaluation.splits import DEV_SHARE, assign_splits, of_split
 from tessera.evaluation.validators import (
     missing_facts,
@@ -44,6 +50,7 @@ from tessera.evaluation.writing import (
     render_template,
     writing_brief,
 )
+from tessera.governance.policies import load_decision_policy
 from tessera.knowledge import load_activity_taxonomy
 from tessera.llm.config import load_models_policy
 from tessera.llm.testing import ScriptedTransport, chat_reply
@@ -173,6 +180,18 @@ def test_every_recipe_family_appears(world):
     recipes = {s.recipe for s in sample_scenarios(world, 30, seed=7)}
     assert {"genuine", "copied_identifiers", "imitated_domain", "outside_the_licence"} <= recipes
     assert {"third_party_payment", "regulator_notice", "unknown_firm", "off_platform"} <= recipes
+
+
+def test_every_registered_factor_has_a_recipe(world):
+    """Fifteen scenario factors are registered (§11.2 B). None may go unused."""
+    factors = {factor for s in sample_scenarios(world, 40, seed=7) for factor in s.factors}
+    assert factors == {f"F{number}" for number in range(1, 16)}
+
+
+def test_a_respelling_keeps_the_name_recognisable():
+    assert respelled("Al Dhow Capital") == "El Dhow Capital"
+    assert respelled("Harbour Cedar") == "Harbur Cedar"
+    assert respelled("Falcon Ridge") is None
 
 
 def test_a_lookalike_differs_from_its_original_and_stays_reserved():
@@ -412,6 +431,51 @@ def test_settling_changes_labels_and_lists_every_drop():
     assert dropped == ["M-2"]
     assert [i.item_id for i in kept] == ["M-1", "M-3"]
     assert kept[0].gold_label is ResultCode.UNVERIFIED
+
+
+# ------------------------------------------------------------------ the components
+
+
+def test_the_name_matcher_finds_variants_and_ignores_strangers(world, populated_settings):
+    thresholds = load_decision_policy(populated_settings.policies_dir).thresholds
+    score = name_matcher(world, thresholds)
+    assert score.positives > len(world.firms)
+    assert score.recall > 0.9
+    assert score.false_alarms == 0
+
+
+def test_the_lookalike_detector_catches_imitations_only(world, populated_settings):
+    thresholds = load_decision_policy(populated_settings.policies_dir).thresholds
+    score = lookalike_detector(world, thresholds, seed=1)
+    assert score.recall > 0.9
+    assert score.false_alarms == 0
+
+
+def test_contact_extraction_finds_what_an_item_was_built_with(world, stack):
+    built = asyncio.run(
+        build_message_items(
+            sample_scenarios(world, 12, seed=7),
+            stack,
+            world,
+            today=TODAY,
+            seed=5,
+            use_model=False,
+            people=False,
+        )
+    )
+    score = contact_extraction(built.items)
+    assert score.positives >= 30
+    assert score.recall == 1.0
+
+
+def test_a_missed_contact_counts_against_extraction():
+    missed = item(contacts=("alpha.example",), text="Nothing to see here.")
+    assert contact_extraction([missed]).recall == 0.0
+
+
+def test_a_score_copes_with_nothing_to_measure():
+    empty = contact_extraction([])
+    assert empty.recall is None and empty.precision is None
 
 
 # ------------------------------------------------------------------ the entity-level set

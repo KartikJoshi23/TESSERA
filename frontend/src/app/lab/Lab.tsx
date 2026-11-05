@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Notice, PageTitle } from "@/components/ui";
+import pilot from "@/data/pilot-comparison.json";
 import smoke from "@/data/smoke-comparison.json";
 import { type SmokeCase, type SmokeRow, type SmokeRun, summarize } from "@/lib/smoke";
 import { conditionName, RESULT_LOOK } from "@/lib/vocabulary";
@@ -11,7 +12,7 @@ type Tab = "entity" | "message" | "smoke";
 const TABS: { id: Tab; label: string }[] = [
   { id: "entity", label: "Entity-level (real records)" },
   { id: "message", label: "Message-level (synthetic)" },
-  { id: "smoke", label: "Development smoke set" },
+  { id: "smoke", label: "Development runs" },
 ];
 
 /** Stepped down from the result colours for filled marks, and checked against this surface. */
@@ -255,23 +256,56 @@ function SummaryTable({ rows }: { rows: SmokeRow[] }) {
   );
 }
 
+const DEVELOPMENT_SETS = {
+  pilot: {
+    label: "Fictional pilot",
+    runs: pilot.runs as SmokeRun[],
+    note: "Generated offers about the fictional firms, worded to hide the facts. Plain rules find these hard, so they say more than the smoke set, but they are still development data.",
+  },
+  smoke: {
+    label: "Smoke set",
+    runs: smoke.runs as SmokeRun[],
+    note: "Fictional cases written by hand to test the build. They are too easy: rules alone get most of them right.",
+  },
+};
+
+type DevelopmentSet = keyof typeof DEVELOPMENT_SETS;
+
 function SmokeResults() {
+  const [chosen, setChosen] = useState<DevelopmentSet>(pilot.runs.length ? "pilot" : "smoke");
+  const set = DEVELOPMENT_SETS[chosen];
   const rows = useMemo(() => {
-    const summaries = (smoke.runs as SmokeRun[]).map(summarize);
+    const summaries = set.runs.map(summarize);
     const rank = (row: SmokeRow) => {
       const index = CONDITION_ORDER.indexOf(row.condition);
       return index === -1 ? CONDITION_ORDER.length : index;
     };
     return summaries.sort((a, b) => rank(a) - rank(b) || a.run.localeCompare(b.run));
-  }, []);
+  }, [set]);
   return (
     <div className="flex flex-col gap-4" data-testid="smoke-results">
+      <div role="group" aria-label="Development set" className="flex gap-1">
+        {(Object.keys(DEVELOPMENT_SETS) as DevelopmentSet[]).map((key) => (
+          <button
+            key={key}
+            type="button"
+            aria-pressed={chosen === key}
+            onClick={() => setChosen(key)}
+            className={`cursor-pointer rounded-lg border px-3 py-1 text-sm ${
+              chosen === key
+                ? "border-line-strong bg-white/10 text-text"
+                : "border-line text-text-2 hover:text-text"
+            }`}
+          >
+            {DEVELOPMENT_SETS[key].label}
+          </button>
+        ))}
+      </div>
       <Notice title="Development numbers only" tone="caution">
-        These {rows[0]?.total ?? 25} fictional cases were written by hand to test the build, and they
-        are too easy: rules alone get most of them right. They say nothing about final performance.
+        {set.note} They say nothing about final performance.
       </Notice>
       {rows.length === 0 ? (
-        <Notice title="No finished runs yet">Run the smoke set, then rebuild this summary.</Notice>
+        <Notice title="No finished runs yet">Nothing has finished on this set.</Notice>
       ) : (
         <>
           <div className="grid gap-4 lg:grid-cols-2">

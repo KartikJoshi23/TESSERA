@@ -22,6 +22,7 @@ from tessera.blackboard.store import EventStore
 from tessera.config.settings import Mode, load_settings
 from tessera.devdata import FICTION_DATE, install_world
 from tessera.errors import PolicyError
+from tessera.evaluation.components import component_report
 from tessera.evaluation.entities import build_entity_items
 from tessera.evaluation.firms import load_world
 from tessera.evaluation.harness import Harness, load_records
@@ -36,6 +37,7 @@ from tessera.evaluation.scenarios import sample_scenarios
 from tessera.evaluation.splits import assign_splits, of_split
 from tessera.evaluation.statistics import mcnemar_power
 from tessera.evaluation.writing import writing_brief
+from tessera.governance.policies import load_decision_policy
 from tessera.knowledge import load_activity_taxonomy
 from tessera.llm.config import load_models_policy
 from tessera.llm.stack import build_live_transport
@@ -232,6 +234,20 @@ def _report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _components(args: argparse.Namespace) -> int:
+    """Whether the tools work, apart from any model (§11.2 C)."""
+    stack, _, _ = _stack(args, model=False, log=_scratch_log())
+    world, _ = _world(stack)
+    thresholds = load_decision_policy(stack.settings.policies_dir).thresholds
+    items = _load(args.items) if args.items else []
+    for name, score in component_report(world, thresholds, items, seed=args.seed).items():
+        print(
+            f"{name}: found {score.found} of {score.positives}, "
+            f"false alarms {score.false_alarms} of {score.negatives}"
+        )
+    return 0
+
+
 def _power(args: argparse.Namespace) -> int:
     """Redone after the pilot, with the rates it measured (§11.4)."""
     power = mcnemar_power(args.items, args.baseline, args.crew, shared=args.shared)
@@ -248,6 +264,34 @@ def _leakage(args: argparse.Namespace) -> int:
         print(f"found: {line}")
     print(f"{len(found)} record names in prompts and rule cards")
     return 1 if found else 0
+
+
+def _lab(args: argparse.Namespace) -> int:
+    """Counts for the Lab's development view. It holds only IDs, result codes and costs."""
+    if not args.fiction:
+        print("tessera-eval: only a fictional run may go in the Lab's development view")
+        return 2
+    gold = {item.item_id: item.gold_label.value for item in _load(args.items)}
+    by_condition: dict[str, list[dict[str, Any]]] = {}
+    for record in load_records(args.run_dir):
+        if record["run"] == 0 and record["item_id"] in gold:
+            by_condition.setdefault(record["condition"], []).append(
+                {
+                    "case": record["item_id"],
+                    "gold": gold[record["item_id"]],
+                    "result": record["result"],
+                    "requests": record["requests"],
+                    "tokens": record["tokens"],
+                    "seconds": round(record["seconds"]),
+                }
+            )
+    runs = [
+        {"run": name, "condition": name, "rate_limited": 0, "cases": cases}
+        for name, cases in by_condition.items()
+    ]
+    args.out.write_text(json.dumps({"runs": runs}, indent=1) + "\n", encoding="utf-8")
+    print(f"wrote {len(runs)} systems to {args.out}")
+    return 0
 
 
 def _freeze(args: argparse.Namespace) -> int:
@@ -320,6 +364,16 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--run-dir", type=Path, required=True)
     report.add_argument("--out", type=Path)
 
+    components = commands.add_parser("components", help="check the tools, with no model")
+    common(components)
+    components.add_argument("--items", type=Path, nargs="*")
+
+    lab = commands.add_parser("lab", help="counts from a fictional run, for the Lab")
+    lab.add_argument("--fiction", action="store_true")
+    lab.add_argument("--items", type=Path, nargs="+", required=True)
+    lab.add_argument("--run-dir", type=Path, required=True)
+    lab.add_argument("--out", type=Path, required=True)
+
     power = commands.add_parser("power", help="how likely a true difference is to be found")
     power.add_argument("--items", type=int, default=224)
     power.add_argument("--baseline", type=float, required=True)
@@ -352,6 +406,10 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_run(args))
         if args.command == "report":
             return _report(args)
+        if args.command == "components":
+            return _components(args)
+        if args.command == "lab":
+            return _lab(args)
         if args.command == "power":
             return _power(args)
         if args.command == "leakage":

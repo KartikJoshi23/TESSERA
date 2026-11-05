@@ -49,6 +49,8 @@ class EvalItem(BaseModel):
     channel: Channel | None = None
     gold_reasons: tuple[str, ...] = ()
     gold_relevant: tuple[str, ...] = ()
+    #: The contact details the item was built with, to check extraction against (§11.2 C).
+    contacts: tuple[str, ...] = ()
     #: E1 to E11 for an entity card (§11.2 A).
     stratum: str = ""
     #: F1 to F15 for a message (§11.2 B).

@@ -22,7 +22,7 @@ _PLAIN = (
     "{activity} is now open to new clients. " + _END,
     "Our clients in Dubai keep asking about {activity}, so {firm}{claim_part} "
     "has room for a few more. " + _END,
-    "{firm}{claim_part}. {activity}, explained simply. " + _END,
+    "{firm}{claim_part}: {activity}, explained simply. " + _END,
 )
 _PRESSURE = (
     "ONLY 3 PLACES LEFT!!! {firm}{claim_part} is closing {activity} to new clients TONIGHT. "
@@ -73,6 +73,8 @@ def render_template(scenario: Scenario, rng: random.Random) -> str:
         reference_part=reference,
     )
     text = text.replace(",,", ",").replace(",.", ".").replace(", :", ":")
+    if "address" in slots:
+        text = f"{text} Office: {slots['address']}."
     if "aside" in slots:
         text = f"{text} {slots['aside']}"
     return text

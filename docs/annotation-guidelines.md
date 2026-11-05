@@ -50,3 +50,18 @@ The records show three things: the firm is authorised; its official website is
 `lumencrest.example`; and an alert names `lumencrest-capital.example`. The label is
 **Conflicts with the official record**, under HC1 (the domain is alert-listed) and HC5 (the
 domain imitates the official one). The rationale cites the register and alert record IDs.
+
+## 6. Running the review
+
+From `backend/`, with `A` as the annotator's initials:
+
+```bash
+uv run tessera-eval sheet --items ../datasets/message_level/dev/items.jsonl --annotator A --out ../datasets/review/A.csv
+uv run tessera-eval agreement --items ../datasets/message_level/dev/items.jsonl --first ../datasets/review/A.csv --second ../datasets/review/B.csv
+```
+
+A sheet shows only each item's ID and text, in an order of its own. Fill in `label` with `CONSISTENT`,
+`CONFLICTS` or `UNVERIFIED`. `agreement` gives Cohen's kappa, the items to discuss, and any where both
+annotators differ from the policy's label. Items built from DFSA facts stay under
+`datasets/restricted/`, and so do their sheets.
+

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from tessera.baseline.rules_only import _REGISTER_WORDS
+from tessera.baseline.rules_only import REGISTER_WORDS
 from tessera.data.registry import DataRegistry
 from tessera.data.schemas import (
     CmaLicensedRecord,
@@ -52,6 +52,10 @@ class Firm:
     restricted: bool
 
     @property
+    def covers_virtual(self) -> bool:
+        return any(code.startswith("VA.") for code in self.covers)
+
+    @property
     def short_name(self) -> str:
         """The name as an offer would loosely use it, without its legal ending."""
         lowered = self.name.casefold().rstrip()
@@ -76,7 +80,7 @@ class Listed:
 
 def _words_cover(activities: list[str], code: str) -> bool:
     joined = " ".join(activities).casefold()
-    return any(word in joined for word in _REGISTER_WORDS.get(code, ()))
+    return any(word in joined for word in REGISTER_WORDS.get(code, ()))
 
 
 def _covers(activities: list[str], taxonomy: ActivityTaxonomy) -> tuple[str, ...]:
