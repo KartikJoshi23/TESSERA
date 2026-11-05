@@ -55,8 +55,9 @@ Everything else broken down by factor is exploratory, and is labelled that way.
 - **Decoding:** one primary run per condition at temperature 0 with a fixed seed.
 - **Stability:** temperature 0.7, SA-VER and CREW-FULL three runs each. SA-SC5's five samples serve
   as SA-BASE's.
-- **Reasoning setting:** see the deviations log. One setting applies to every condition, except that
-  SA-MAX exists to differ from it.
+- **Reasoning setting:** on, the model's default, for every condition. On or off is the model's only
+  control, so SA-MAX differs from SA-BASE only in its longer output allowance. SA-SC5 is the arm that
+  spends the extra compute in a different way.
 - **A system that gives no result** is scored as "Could not verify", and failures are reported.
 - **Prompts:** the same number of revisions for both systems, at most 5 each, on development data
   only, logged in `backend/prompts/CHANGELOG.md`.
@@ -76,3 +77,4 @@ Each entry gives the date, what changed and why.
 | Date | Change | Why |
 |---|---|---|
 | 2026-11-05 | Pace set to 7.5 requests a minute, not 35 | Measured with no retries: about 8 a minute get through on this free key. A full run takes about a week, not 45 hours (§11.5) |
+| 2026-11-05 | SA-MAX defined as SA-BASE with twice the output allowance | The plan assumed a higher reasoning setting, but the model only offers on or off, and on is the default for all. 32,768 tokens a reply covers the crew's median output of about 27K tokens a case. Only 1 of 136 single-agent replies reached the normal allowance, so SA-MAX may differ little from SA-BASE |

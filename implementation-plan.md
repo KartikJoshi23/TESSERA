@@ -359,7 +359,7 @@ Tools are kept to the ones that need a model's judgement, because each call cost
 - **Decoding.**
   - Temperature 0, with a fixed seed where supported, for the primary comparison, identical for every role and condition.
   - Temperature 0.7 only for self-consistency and stability runs.
-- **Reasoning.** If the model has a reasoning switch, every role and baseline uses the same default setting. The primary model reasons by default, and `policies/models.yaml` states that explicitly. No higher setting has been found yet, so Part 4 must confirm what SA-MAX can actually change.
+- **Reasoning.** Every role and baseline uses the same setting: reasoning on, the model's default, which `policies/models.yaml` states explicitly. A comparison on 5 Nov 2026 gave no reason to leave it (ADR-0004). The model's only control is on or off, so SA-MAX differs only in its longer outputs (F29).
 - **Structured output.**
   - Every model follows one path: JSON instructions, then Pydantic validation, then one repair attempt. The probe measures this exact path. If a model falls short, a JSON-schema response format can be added without changing the agents.
   - An output that is still invalid becomes an "agent failed" finding (U7).
@@ -650,7 +650,7 @@ Because these rows are restricted, the model sees placeholders: the firm name be
 - **Event types:**
   - case: `case.created`
   - rounds and agents: `round.started`, `agent.activated`, `agent.repair`, `agent.failed`
-  - model and tool calls: `llm.response` (with usage and a hash of the request, not the request itself), `tool.called`, `tool.failed`, `evidence.minted`; retries and rate limiting are reported as `llm.retry` and `rate_limited`
+  - model and tool calls: `llm.response` (with usage and a hash of the request, not the request itself), `tool.called`, `tool.failed`, `tool.repeated`, `evidence.minted`; retries and rate limiting are reported as `llm.retry` and `rate_limited`
   - findings and messages: `finding.posted`, `finding.revised`, `message.sent`, `protocol.rejected`
   - conflicts: `conflict.detected`, `conflict.resolved`, `conflict.settled`
   - proposal and verification: `proposal.created`, `policy.derived`, `verifier.decision` (with every gate's result), `verifier.autofix`
@@ -874,7 +874,7 @@ This is an engineering reading of PS.md's guidance, not legal advice. The design
 | **SA-BASE** | One agent, all tools, all rule cards, temperature 0, default reasoning setting | **The mandatory baseline** |
 | **SA-VER** | SA-BASE plus the same Verifier and one remediation cycle | The value of verification on its own |
 | **SA-SC5** | Majority vote over 5 SA-BASE runs at temperature 0.7. A tie goes to the more cautious result | A control for extra compute via voting |
-| **SA-MAX** | SA-BASE at the model's highest reasoning setting, with a tool-call allowance matched to the crew's median output tokens | A control for extra compute via more thinking |
+| **SA-MAX** | SA-BASE with twice the output allowance, 32,768 tokens a reply, which covers the crew's median output of about 27K tokens a case. Reasoning is on for every condition, and on or off is the model's only control | A control for extra compute via more thinking |
 | SA-LARGER *(optional)* | SA-BASE on the largest tool-capable free model | A bigger single model instead of a crew |
 | **CREW-SILO** | Agents work independently with no messages; Reconciler synthesis; Verifier on | Baseline for measuring sharing |
 | **CREW-SHARE** | Findings shared once; Reconciler synthesis; no challenges; Verifier on | The value of sharing |
@@ -1552,7 +1552,7 @@ Each part ends with a short report covering what was built, tests run, open issu
 | D7 | Arabic messages | **English text with Arabic name variants in Phase 1.** Arabic-language messages wait for an annotator who reads Arabic | Labels must be checkable by the people who annotate |
 | D8 | CMA export | **You click "Export To Excel" by hand** | The most conservative reading of the CMA terms |
 | D9 | IOSCO I-SCAN API | **Deferred to Part 8** (free; you would sign its terms) | Optional, and incomplete by IOSCO's own statement |
-| D10 | Reasoning and effort setting | **The same default reasoning setting and temperature 0 for every role and baseline.** SA-MAX uses the highest setting | Fair comparison |
+| D10 | Reasoning and effort setting | **The same default reasoning setting (on) and temperature 0 for every role and baseline.** SA-MAX gets a longer output allowance, the only higher setting there is | Fair comparison |
 | D11 | Codename | **TESSERA**, matching the repository name | — |
 | D12 | Public repository | **Only code, docs, policies, rule cards, templates and fictional fixtures are pushed to `main`.** Everything real stays local, enforced by the guard and CI | Avoids publishing DFSA or VARA material |
 | D13 | Several NVIDIA keys | **One key.** No rotation of keys or accounts to get around rate limits; ask NVIDIA for a higher limit if needed | Rotating keys to evade limits would likely breach the trial terms and risk losing access |
@@ -1767,7 +1767,7 @@ Each change keeps to the approved design, or moves it for the reason given.
 | F26 | 3 | With the Verifier on, a report states every hard conflict and reason the decision-policy engine derives, not the ones the proposal happened to list | They are deterministic and checkable. A proposal needs only one backed hard conflict to pass |
 | F27 | 4 | RULES-ONLY's crew works from a reading of the offer, and the tests give it a perfect reading | The same code answers two questions: how far plain rules get, and whether the policy reaches gold when an offer is read correctly |
 | F28 | 4 | The single agent returns one object, posted through the same code as the crew's findings, and answers a veto by replacing all its findings | It has no challenge rounds, so it needs another way to correct itself. Its findings are the same types, so the same gates apply |
-| F29 | 4 | SA-MAX can only differ from SA-BASE by thinking and output length | The model's only reasoning control found so far is on or off. If primary runs use thinking on, SA-MAX differs only in its longer outputs |
+| F29 | 4 | SA-MAX can only differ from SA-BASE by thinking and output length | The model's only reasoning control found so far is on or off. Primary runs use thinking on (F58), so SA-MAX differs only in its longer outputs. SA-SC5 is the arm that spends the extra compute in a different way |
 | F30 | 4 | A second review fixed: the DFSA tool never returned its no-match evidence ID, so an agent could not report that a firm is not on the DFSA register; our field names used a word the language policy bans; the shared ground rules told one agent working alone that it was "one member"; retries stopped too soon for a slow spell at the provider | Found by reading live traces. The first explains a hard conflict that was missing from a live case |
 | F31 | 4 | Added the trace bundle and coordination telemetry that §6.11 calls for, served at `/api/cases/{id}/trace` | The evaluation and the frontend both need them |
 | F32 | 5 | The stage is hand-built SVG, not React Flow | Tiles, a gate and particles are not a node graph. It is less code, with full control of the motion, and it adds no dependency |
@@ -1795,4 +1795,6 @@ Each change keeps to the approved design, or moves it for the reason given.
 | F54 | 6 | The report adds an interval for each system, a breakdown by factor and the H5 interaction test (`focus_factors` in `eval/plan.yaml`). The Lab reads this one file, and a test ties its fields to the report | One source for every number, so a chart cannot disagree with the table beside it |
 | F55 | 6 | `tessera-eval readiness` lists what is missing before a run, against the targets for each stratum | The data work is by hand, and a gap is cheaper to find before a week of requests |
 | F56 | 6 | An alert found only through a contact point is posted as `contact_listed`, whatever a model called it | Same cause as F45. S13 names no firm, and a model's "entity unauthorised" failed G2 twice, turning a right answer into "Could not verify" |
+| F57 | 6 | A repeated identical tool call is not run again. The model is told once, and a second reply of nothing but repeats closes its tools for the turn. This sits in the shared runner, so it applies to every condition | Live runs: the single agent repeated 57 of 299 calls with thinking on and 135 of 365 with it off, one tool up to 24 times in a row, against 4 of 134 and 20 of 190 for the crew. Tools are deterministic, so a repeat cannot help, and a larger allowance made the loop longer. Left alone it would have counted against the baseline on cost |
+| F58 | 6 | Reasoning stays on for every condition | Same cases: the crew scored 10 of 11 either way, using 145 requests with it on and 202 off. The single agent scored 25 of 25 on and 24 of 25 off, using 136 and 226. The crew's one miss with it on was the bug fixed in F56. Part of the request gap came from the loops fixed in F57, so the deciding reason is that on is the registered default and nothing here argues for leaving it. Tokens are not what the free tier limits |
 

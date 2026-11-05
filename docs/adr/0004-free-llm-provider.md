@@ -14,7 +14,7 @@
     not plan on one.
   - **Primary:** `nvidia/nemotron-3.5-super-vl-120b-a12b`, with reasoning on through
     `chat_template_kwargs.enable_thinking`. It reasons by default, and this setting states that
-    explicitly so that a change of default cannot alter a run unnoticed.
+    explicitly so that a change of default cannot alter a run unnoticed. Every condition uses it.
   - **Smaller same-family model** for the capability arm:
     `nvidia/nemotron-3.5-lightning-30b-a3b`.
   - **Different-family model** for synthetic paraphrase: `mistralai/mistral-large-4-1t-a52b`.
@@ -57,3 +57,22 @@
   262,144 tokens (its description says up to 1M), which clears the 128K bar, and its weights are
   public under the OpenMDW License. Run the probe once more before any test-set run: the models
   an account can reach can change.
+
+## Reasoning on or off, measured on 5 Nov 2026
+
+The same fictional development cases, one setting at a time, in one sitting.
+
+| Run | Matched the label | Requests | Refused (HTTP 429) | Output tokens a case |
+|---|---|---|---|---|
+| Crew, reasoning on | 10 of 11 | 145 | 63 | 28,880 |
+| Crew, reasoning off | 10 of 11 | 202 | 160 | 3,596 |
+| Single agent, reasoning on | 25 of 25 | 136 | 38 | 19,036 |
+| Single agent, reasoning off | 24 of 25 | 226 | 175 | 1,769 |
+
+Reasoning stays on. It is the registered default, it never scored lower, and tokens are not what
+this free tier limits. The crew's one miss with it on was a bug, since fixed: a model's label on an
+alert found only by domain. Its one miss with it off came from the Verifier's own reading.
+
+The request gap overstates the case. Most of it came from repeated tool calls, which the runner now
+stops for every condition, so it says little about reasoning itself. These are development cases,
+and they say nothing about final performance.

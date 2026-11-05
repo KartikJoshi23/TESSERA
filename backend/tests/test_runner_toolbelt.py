@@ -234,6 +234,71 @@ def test_the_tool_limit_forces_a_final_answer(harness):
     assert "tools" not in final and "used all your tool calls" in final["messages"][-1]["content"]
 
 
+LOOKUP = ("dfsa_facts_lookup", {"frn": "F000000", "name": "Falcon Ridge"})
+SAME_LOOKUP = ("dfsa_facts_lookup", {"name": "Falcon Ridge", "frn": "F000000"})
+
+
+def lookups(setup):
+    return setup.board.store.of_types("tool.called")
+
+
+ROOMY = LimitsConfig(tool_calls_per_turn=32, repair_attempts=1, requests_per_case=9)
+
+
+def test_a_repeated_call_is_not_run_again_and_the_model_is_told(harness):
+    setup = harness(OFFER, tool_reply(LOOKUP), tool_reply(SAME_LOOKUP), json_reply({"answer": "x"}))
+    result = run(setup)
+    assert result.ok and result.repeats == 1 and result.tool_calls == 2
+    assert len(lookups(setup)) == 1
+    last_tool_reply = setup.transport.payloads[-1]["messages"][-1]
+    assert last_tool_reply["role"] == "tool" and "same answer" in last_tool_reply["content"]
+    assert "tools" in setup.transport.payloads[-1]
+
+
+def test_a_model_that_keeps_repeating_loses_its_tools(harness):
+    """The live run: a single agent called one tool 24 times in a row, to the end of its budget."""
+    setup = harness(
+        OFFER,
+        tool_reply(LOOKUP),
+        tool_reply(LOOKUP),
+        tool_reply(LOOKUP),
+        json_reply({"answer": "done"}),
+    )
+    result = run(setup, limits=ROOMY)
+    assert result.ok and result.repeats == 2 and result.requests == 4
+    final = setup.transport.payloads[-1]
+    assert "tools" not in final and "closed for this turn" in final["messages"][-1]["content"]
+
+
+def test_a_new_call_after_a_repeat_is_still_allowed(harness):
+    other = ("dfsa_facts_lookup", {"frn": "F999999"})
+    setup = harness(
+        OFFER,
+        tool_reply(LOOKUP),
+        tool_reply(LOOKUP),
+        tool_reply(other),
+        tool_reply(LOOKUP),
+        json_reply({"answer": "done"}),
+    )
+    result = run(setup, limits=ROOMY)
+    assert result.ok and result.repeats == 2 and len(lookups(setup)) == 2
+
+
+def test_a_reply_that_repeats_itself_runs_the_call_once(harness):
+    setup = harness(OFFER, tool_reply(LOOKUP, LOOKUP), json_reply({"answer": "done"}))
+    result = run(setup)
+    assert result.ok and result.repeats == 1 and len(lookups(setup)) == 1
+    messages = setup.transport.payloads[-1]["messages"]
+    assert [m["role"] for m in messages[-3:]] == ["assistant", "tool", "tool"]
+
+
+def test_a_failed_call_may_be_tried_again(harness):
+    bad = ("no_such_tool", {"x": 1})
+    setup = harness(OFFER, tool_reply(bad), tool_reply(bad), json_reply({"answer": "done"}))
+    result = run(setup)
+    assert result.ok and result.repeats == 0
+
+
 def test_a_repair_never_leaves_an_unanswered_tool_call_in_the_history(harness):
     """After the tool limit, a stray tool call must not reach the provider unanswered."""
     limits = LimitsConfig(tool_calls_per_turn=1, repair_attempts=1, requests_per_case=9)

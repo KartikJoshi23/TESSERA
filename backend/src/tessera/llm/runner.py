@@ -15,6 +15,7 @@ The message history is append-only within a turn, and reasoning text is never se
 from __future__ import annotations
 
 import hashlib
+import json
 import time
 from collections import Counter
 from collections.abc import Callable
@@ -29,7 +30,7 @@ from tessera.llm.client import GuardedLLM
 from tessera.llm.config import DecodingConfig, LimitsConfig
 from tessera.llm.jsonio import extract_json_object, strip_reasoning
 from tessera.llm.prompts import RenderedPrompt
-from tessera.llm.types import ChatResponse, LLMError, build_payload
+from tessera.llm.types import ChatResponse, LLMError, ToolCall, build_payload
 from tessera.protocol.common import AgentId
 from tessera.protocol.evidence import canonical_json
 
@@ -39,6 +40,16 @@ _TOOLS_USED_UP = (
     "You have used all your tool calls for this turn. "
     "Reply now with the final JSON object, using what you already have."
 )
+_REPEATED_CALL = (
+    '{"note": "You already made this exact call. Tools give the same answer each time, '
+    'so use the result you have."}'
+)
+_NO_NEW_CALLS = (
+    "Repeating a call adds nothing, so your tools are closed for this turn. "
+    "Reply now with the final JSON object, using what you already have."
+)
+#: A reply of nothing but repeats gets a note this many times. The next one closes the tools.
+_REPEAT_REPLIES_ALLOWED = 1
 
 
 class Belt(Protocol):
@@ -89,12 +100,21 @@ class TurnResult:
     failure: str | None = None
     requests: int = 0
     tool_calls: int = 0
+    repeats: int = 0
     repairs: int = 0
     reasoning: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         return self.output is not None
+
+
+def _call_key(call: ToolCall) -> tuple[str, str]:
+    """Two calls are the same whatever order their arguments came in."""
+    try:
+        return call.name, canonical_json(json.loads(call.arguments or "{}"))
+    except ValueError:
+        return call.name, call.arguments
 
 
 def _assistant_message(response: ChatResponse) -> dict[str, Any]:
@@ -195,8 +215,13 @@ class AgentRunner:
         ]
         tools = self._belt.definitions(spec.tool_names) if spec.tool_names else None
         cap = self._limits.tool_calls_per_turn
+        # Tools are deterministic, so a repeat cannot help. A model can loop on one for a whole
+        # allowance, which costs more where the allowance is larger, so this is shared by all.
+        answered: set[tuple[str, str]] = set()
+        repeat_replies = 0
         while True:
-            offered = tools if result.tool_calls < cap else None
+            closed = repeat_replies > _REPEAT_REPLIES_ALLOWED
+            offered = tools if result.tool_calls < cap and not closed else None
             try:
                 response = await self._complete(spec, messages, offered, round)
             except RequestBudgetExceeded as exc:
@@ -212,18 +237,34 @@ class AgentRunner:
 
             if response.tool_calls and offered:
                 messages.append(_assistant_message(response))
+                new_calls = 0
                 for call in response.tool_calls:
                     result.tool_calls += 1
-                    content, _ = self._belt.execute(
-                        call.name,
-                        call.arguments,
-                        allowed=spec.tool_names,
-                        actor=spec.agent_id,
-                        round=round,
-                    )
+                    key = _call_key(call)
+                    if key in answered:
+                        result.repeats += 1
+                        self._board.record(
+                            "tool.repeated", spec.agent_id, {"tool": call.name, "round": round}
+                        )
+                        content = _REPEATED_CALL
+                    else:
+                        new_calls += 1
+                        content, succeeded = self._belt.execute(
+                            call.name,
+                            call.arguments,
+                            allowed=spec.tool_names,
+                            actor=spec.agent_id,
+                            round=round,
+                        )
+                        if succeeded:
+                            answered.add(key)
                     messages.append({"role": "tool", "tool_call_id": call.id, "content": content})
+                if not new_calls:
+                    repeat_replies += 1
                 if result.tool_calls >= cap:
                     messages.append({"role": "user", "content": _TOOLS_USED_UP})
+                elif repeat_replies > _REPEAT_REPLIES_ALLOWED:
+                    messages.append({"role": "user", "content": _NO_NEW_CALLS})
                 continue
 
             output, problems = self._parse(spec, response.content)

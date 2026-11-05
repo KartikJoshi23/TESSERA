@@ -29,7 +29,8 @@ SC5_RUNS = 5
 #: Marks a sampled run of SA-SC5, so a list of cases can leave it out.
 SAMPLE_MARK = ".run"
 SC5_TEMPERATURE = 0.7
-#: SA-MAX gets longer outputs, standing in for the crew's total output until Part 6 measures it.
+#: SA-MAX gets longer outputs: 32,768 tokens a reply covers the crew's output, measured at a
+#: median of about 27K tokens a case. Reasoning is on for all, so this is all it can change.
 SA_MAX_TOKEN_FACTOR = 2
 SINGLE: dict[SystemCondition, SingleConfig] = {
     SystemCondition.SA_BASE: SingleConfig(),

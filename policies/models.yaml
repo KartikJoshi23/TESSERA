@@ -52,7 +52,8 @@ candidates:
     - deepseek-ai/deepseek-v4.1-flash
 
 # Provider-specific request fields, per model. Reasoning is on by default for the primary model.
-# It is stated here so that a change of default cannot alter a run unnoticed.
+# It is stated here so that a change of default cannot alter a run unnoticed. Compared with it off
+# on 5 Nov 2026, and kept on for every condition (results in ADR-0004).
 model_options:
   nvidia/nemotron-3.5-super-vl-120b-a12b:
     extra_body:
