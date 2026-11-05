@@ -7,9 +7,12 @@
     the OpenAI request format. Calls go directly through `httpx`, not the `openai` package, so
     the whole request path, with its leak checks, is in our code.
   - **Key:** one key in the local `.env`.
-  - **Rate limit:** one shared limiter at 7.5 requests per minute. The free tier is said to allow
-    about 40, but a no-retry probe on 5 Nov 2026 measured about 8 getting through, whatever the
-    prompt size (30 sent a minute: 12 passed; 20: 8 passed; 12: 8 passed).
+  - **Rate limit:** one shared limiter at 4 requests per minute. The free tier is said to allow
+    about 40, but steady no-retry probes on 5 Nov 2026 sustained under 4, whatever the prompt size.
+    Sent for six minutes each: 6 a minute, 3.8 passed; 4.5, 3.7; 3.75, 2.9; 3, 2.9. An earlier
+    probe of one minute at each pace read about 8, because a first burst of about that size hides
+    the sustained rate. Some requests are refused at any pace, so the limiter sits just above what
+    passes and retries those.
   - **No key or account rotation to evade limits.** Ask NVIDIA for an increase if needed, but do
     not plan on one.
   - **Primary:** `nvidia/nemotron-3.5-super-vl-120b-a12b`, with reasoning on through

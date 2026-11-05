@@ -7,16 +7,17 @@ provider:
   base_url: https://integrate.api.nvidia.com/v1
   api_key_env: NVIDIA_API_KEY
 
-# Measured on 2026-11-05 with no retries: about 8 requests a minute got through, whatever the prompt
-# size (90 to 14,000 tokens), after a short burst. The published figure of about 40 did not hold for
-# this key. We pace just below what was measured, with one key, so requests are not wasted on 429s.
+# Measured on 2026-11-05 with no retries, over six minutes at each steady pace: sending 6 a minute,
+# 3.8 passed; 4.5, 3.7; 3.75, 2.9; 3, 2.9. Prompt size made no difference. The published figure of
+# about 40 did not hold for this key, and a first burst of about 8 hid the sustained rate. Some
+# requests are refused at any pace, so we pace just above what passes and retry those, with one key.
 rate_limit:
-  requests_per_minute: 7.5
+  requests_per_minute: 4
   max_concurrent: 4
   max_attempts: 8
   base_backoff_seconds: 2
   max_backoff_seconds: 120
-  request_timeout_seconds: 240
+  request_timeout_seconds: 360
 
 # Primary runs. Stability and self-consistency runs override the temperature (§11.4).
 decoding:

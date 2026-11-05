@@ -58,7 +58,7 @@
    - Ablations switch off sharing, challenges and the Verifier one at a time.
    - Work from 2025–26 finds that single agents often match multi-agent systems at equal compute. A tie is a valid, publishable outcome, and the design is built to detect a tie, not to hide one.
 4. **Zero budget.**
-   - All models run on NVIDIA's free API catalog, which uses the OpenAI request format. Its stated limit is about 40 requests per minute, but about 8 per minute were measured on this key (§11.5).
+   - All models run on NVIDIA's free API catalog, which uses the OpenAI request format. Its stated limit is about 40 requests per minute, but under 4 per minute were sustained on this key (§11.5).
    - The whole stack is open source, everything runs on this machine, and CI uses free GitHub Actions on the public repository.
    - Because the models are open-weight, anyone can repeat the experiments at no cost.
 5. **Legal design.**
@@ -368,8 +368,8 @@ Tools are kept to the ones that need a model's judgement, because each call cost
   - Arguments are validated before they run. An error goes back to the model as the tool's result, so it can correct itself.
   - A regulator turn that produces no evidence from that regulator's sources is recorded as a coverage gap, so a skipped lookup cannot pass unnoticed.
 - **Rate limits and throughput.**
-  - The free tier is said to allow about 40 requests per minute, and per-model limits are not published. **Measured on 5 Nov 2026 with no retries, about 8 requests a minute got through on this key, whatever the prompt size** (90 to 14,000 tokens), after a short burst of about 7.
-  - One shared rate limiter runs at 7.5 requests per minute, with exponential backoff on HTTP 429 or 5xx errors. Pacing above the real limit wastes requests on retries: at 35 per minute the run achieved only 4.5.
+  - The free tier is said to allow about 40 requests per minute, and per-model limits are not published. **Measured on 5 Nov 2026 with no retries, under 4 requests a minute were sustained on this key, whatever the prompt size** (90 to 14,000 tokens). A first burst of about 8 hid this at first. Sent steadily for six minutes each: 6 a minute, 3.8 passed; 4.5, 3.7; 3.75, 2.9; 3, 2.9. Two live runs held at 4.0 a minute when requests were the limit.
+  - One shared rate limiter runs at 4 requests per minute, with exponential backoff on HTTP 429 or 5xx errors. Some requests are refused at any pace, so this sits just above what passes. Pacing above the real limit wastes requests on retries: at 35 per minute the run achieved only 4.5.
   - Runs are resumable, and the harness can run several cases at once under the same limiter, because the limit is on requests and a crew spends most of a case waiting for one reply at a time.
   - **One key only.** No key rotation or extra accounts to get around limits. If throughput becomes the bottleneck, request a limit increase through NVIDIA's developer forum, but do not plan on one: forum replies point paying users to their own deployments, so the request budget must fit the free limit.
 - **Model identity.**
@@ -1079,13 +1079,13 @@ Money is not the constraint; the rate limit is. The budget is counted in model r
 | **Total** | **≈ 95K** |
 
 - **Run time (first estimate):** at 35 requests per minute this would have been about 45 hours.
-- **Overheads:** development and the pilot add 20–30%. The pilot (20 items × the full run plan) is about 4.4K requests.
+- **Overheads:** development and the pilot add 20–30%. The pilot (20 items × the full run plan) was first put at about 4.4K requests, and is about 2.9K on the figures below.
 
 **Measured on 5 Nov 2026:**
 
-- The real limit is about 8 requests a minute, so the harness paces at 7.5, or about 10,800 a day.
-- CREW-FULL used 17.6 requests a case over 25 fictional cases, and SA-BASE about 4.5. Both are below the estimates above. The other conditions are measured by the pilot.
-- With those figures, a full run is about 100 requests per entity item and about 178 per message item, or **about 82K requests: about 7.6 days of continuous running, or about 18 nights of 10 hours.** The harness stops and resumes at any point, so this can be split as needed.
+- The sustained limit is just under 4 requests a minute, so the harness paces at 4, for about 3.5 replies a minute, or about 5,000 a day.
+- With reasoning on, CREW-FULL used 13.2 requests a case over its 11 hardest fictional cases, and SA-BASE 5.4 over all 25, or about 4 without the repeated calls now stopped (F57). Both are below the estimates above. The other conditions are measured by the pilot.
+- With those figures, a full run is about 85 requests per entity item and about 145 per message item, or **about 68K requests: about 14 days of continuous running, or about 33 nights of 10 hours.** The harness stops and resumes at any point, so this can be split as needed.
 - Replaced by final figures after the pilot.
 - **The optional capability arm** uses a smaller model with its own per-model limit, so it can run in parallel: about 31K requests, or about 15 hours.
 
@@ -1229,7 +1229,7 @@ All components are free and open source. Versions are pinned in lock files.
   - The key `NVIDIA_API_KEY` lives in the local `.env`. CI never needs it, and the commit guard blocks keys in the `nvapi-…` format.
 - **Allowed hosts:** a network allowlist in `policies/sources.yaml` lets the LLM client reach only the configured provider host. Regulator domains are always blocked.
 - **Rate limiter:**
-  - an async pacing limiter at 7.5 requests per minute (measured, §11.5), shared across all agents in a run;
+  - an async pacing limiter at 4 requests per minute (measured, §11.5), shared across all agents in a run;
   - exponential backoff with jitter on HTTP 429 and 5xx errors;
   - a cap on concurrent requests;
   - every request is logged with its latency.
@@ -1443,8 +1443,8 @@ Each part ends with a short report covering what was built, tests run, open issu
 | **3. Crew orchestration, reconciliation, Verifier, streaming API** ✅ | LangGraph crew graph; round scheduler and mailboxes; conflict detector C1–C7; Reconciler protocol; Verifier gates G1–G8 and veto loop; decision-policy engine; report renderer and linter; FastAPI and SSE; command-line case runner; ablation switches | The worked example (§6.10) and 5 more scripted cases give the expected traces; property tests: cases always finish, a veto never upgrades a result, protocol rules are enforced | Annotation of entity-level gold labels begins | L |
 | **4. Baselines** ✅ | RULES-ONLY, SA-BASE, SA-VER, SA-SC5, SA-MAX (optional SA-LARGER), on the shared runner; fairness-contract checks; comparable logging | Config-diff test shows that only orchestration differs; all conditions run on the smoke set | Human-written synthetic messages | M |
 | **5. Frontend** ✅ | Design system; Intake; Orchestration Theater (live and replay); Result Dossier; Arena; Evaluation Lab (using fixtures until Part 6); Data & Governance | Playwright end-to-end tests; reducer replay tests; accessibility checks; demo mode verified clean of DFSA values | Review of the visual design | L |
-| **6. Datasets and evaluation harness, plus pilot** | Entity-level gold builder; synthetic generator, validators and review workflow; splits; rate-limited, resumable harness; metrics; statistics; RULES-ONLY difficulty probe; **pilot** (20 items × the full run plan, about 4.4K requests); measured requests and timing; **pre-registration frozen** | Annotation κ ≥ 0.8 (or the single-annotator fallback); pilot runs end to end | Annotation and adjudication; final freeze of snapshots | L |
-| **7. Experiments, analysis, paper artefacts** | Full runs (about 82K requests, about a week of continuous running in resumable chunks, §11.5); analysis notebooks; figures and tables; MAST failure analysis; draft write-up skeleton; release checklist | All pre-registered analyses reported, including null results | Review of results | M |
+| **6. Datasets and evaluation harness, plus pilot** | Entity-level gold builder; synthetic generator, validators and review workflow; splits; rate-limited, resumable harness; metrics; statistics; RULES-ONLY difficulty probe; **pilot** (20 items × the full run plan, about 2.9K requests); measured requests and timing; **pre-registration frozen** | Annotation κ ≥ 0.8 (or the single-annotator fallback); pilot runs end to end | Annotation and adjudication; final freeze of snapshots | L |
+| **7. Experiments, analysis, paper artefacts** | Full runs (about 68K requests, about two weeks of continuous running in resumable chunks, §11.5); analysis notebooks; figures and tables; MAST failure analysis; draft write-up skeleton; release checklist | All pre-registered analyses reported, including null results | Review of results | M |
 | **8. Extension: CBUAE and ADGM FSRA** | Full reading of the CBUAE and ADGM terms; ingest of the CBUAE PDF (© notice kept); FSRA facts and its 11 alerts from 2026; two new regulator agents; extended rule cards; re-run on a subset; report on how much the added coverage changes results; optional I-SCAN API | Coverage-gap results (U2) shrink as expected; no regressions | Hand-recording for the FSRA | M |
 
 ---
@@ -1797,4 +1797,5 @@ Each change keeps to the approved design, or moves it for the reason given.
 | F56 | 6 | An alert found only through a contact point is posted as `contact_listed`, whatever a model called it | Same cause as F45. S13 names no firm, and a model's "entity unauthorised" failed G2 twice, turning a right answer into "Could not verify" |
 | F57 | 6 | A repeated identical tool call is not run again. The model is told once, and a second reply of nothing but repeats closes its tools for the turn. This sits in the shared runner, so it applies to every condition | Live runs: the single agent repeated 57 of 299 calls with thinking on and 135 of 365 with it off, one tool up to 24 times in a row, against 4 of 134 and 20 of 190 for the crew. Tools are deterministic, so a repeat cannot help, and a larger allowance made the loop longer. Left alone it would have counted against the baseline on cost |
 | F58 | 6 | Reasoning stays on for every condition | Same cases: the crew scored 10 of 11 either way, using 145 requests with it on and 202 off. The single agent scored 25 of 25 on and 24 of 25 off, using 136 and 226. The crew's one miss with it on was the bug fixed in F56. Part of the request gap came from the loops fixed in F57, so the deciding reason is that on is the registered default and nothing here argues for leaving it. Tokens are not what the free tier limits |
+| F59 | 6 | The limiter paces at 4 requests a minute, not 7.5. A full run is about two weeks of continuous running, not one | F43's figure of 8 came from short probes, where a first burst of about 8 hid the sustained rate. Steady six-minute probes passed 3.7 to 3.8 a minute at most, and two live runs held at 4.0. At 7.5 a minute, 44% of requests were refused |
 

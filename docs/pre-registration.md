@@ -78,3 +78,4 @@ Each entry gives the date, what changed and why.
 |---|---|---|
 | 2026-11-05 | Pace set to 7.5 requests a minute, not 35 | Measured with no retries: about 8 a minute get through on this free key. A full run takes about a week, not 45 hours (§11.5) |
 | 2026-11-05 | SA-MAX defined as SA-BASE with twice the output allowance | The plan assumed a higher reasoning setting, but the model only offers on or off, and on is the default for all. 32,768 tokens a reply covers the crew's median output of about 27K tokens a case. Only 1 of 136 single-agent replies reached the normal allowance, so SA-MAX may differ little from SA-BASE |
+| 2026-11-05 | Pace set to 4 requests a minute, not 7.5 | Steady six-minute probes sustained under 4 a minute, and live runs held at 4.0. The earlier figure came from one-minute probes, where a first burst hid the sustained rate. A full run takes about two weeks of continuous running (§11.5) |

@@ -139,7 +139,7 @@ uv run tessera-eval probe --fiction --items ../runs/eval/messages/dev/items.json
 | `tessera-eval freeze` | Records a finished set with its prompts, policies and plan. Real test items run only against a matching freeze |
 
 A run's records hold no gold labels. Labels are joined only when a run is scored. At the free tier's
-real rate of about 8 requests a minute, a full run takes about a week of continuous running.
+real rate of under 4 requests a minute, a full run takes about two weeks of continuous running.
 
 [docs/running-the-evaluation.md](docs/running-the-evaluation.md) gives every step in order, and
 [docs/pre-registration.md](docs/pre-registration.md) holds what is registered.
