@@ -16,7 +16,12 @@ from tessera.evaluation.validators import check_message
 from tessera.evaluation.writing import origin_mix, paraphrase_messages, render_template
 from tessera.llm.types import LLMError
 
-PARAPHRASE_MAX_TOKENS = 500
+#: The paraphrase model reasons before it writes, and that counts against this. At 500, most replies
+#: ran out of room and came back empty.
+PARAPHRASE_MAX_TOKENS = 2000
+#: A model may refuse or lose a kept string on one try and not on the next, so an unusable reply
+#: gets one more. Nothing about the scenario changes between tries.
+PARAPHRASE_TRIES = 2
 MAX_PARAPHRASE_FAILURES = 3
 
 
@@ -76,6 +81,45 @@ async def paraphrase(stack: CrewStack, scenario: Scenario, text: str) -> str:
     return stack.gateway.unmask(response.content or "").strip()
 
 
+def _accept(
+    scenario: Scenario,
+    text: str,
+    origin: str,
+    stack: CrewStack,
+    world: World,
+    seen: set[str],
+    *,
+    today: date,
+) -> tuple[EvalItem | None, list[str]]:
+    """One text, checked. Its wording is remembered only if it becomes an item."""
+    same = " ".join(text.casefold().split())
+    if not same or same in seen:
+        return None, ["empty or repeated text"]
+    item, problems = to_item(scenario, text, origin, stack, world, today=today)
+    if item is not None:
+        seen.add(same)
+    return item, problems
+
+
+async def _reworded(
+    scenario: Scenario,
+    template: str,
+    stack: CrewStack,
+    world: World,
+    seen: set[str],
+    *,
+    today: date,
+) -> tuple[EvalItem | None, list[str]]:
+    """A paraphrase that passes every check, or the problems with the last try."""
+    problems: list[str] = []
+    for _ in range(PARAPHRASE_TRIES):
+        text = await paraphrase(stack, scenario, template)
+        item, problems = _accept(scenario, text, "paraphrase", stack, world, seen, today=today)
+        if item is not None:
+            return item, []
+    return None, problems
+
+
 async def build_message_items(
     scenarios: Sequence[Scenario],
     stack: CrewStack,
@@ -103,10 +147,9 @@ async def build_message_items(
             later.append(scenario)
             continue
         text = render_template(scenario, rng)
-        final_origin = "template"
         if origin == "paraphrase" and use_model:
             try:
-                text = await paraphrase(stack, scenario, text)
+                item, problems = await _reworded(scenario, text, stack, world, seen, today=today)
             except LLMError as exc:
                 # What is built so far has cost requests, so a failure must not lose it.
                 dropped.append(f"{scenario.scenario_id}: paraphrase failed ({type(exc).__name__})")
@@ -116,13 +159,8 @@ async def build_message_items(
                     break
                 continue
             failures = 0
-            final_origin = "paraphrase"
-        same = " ".join(text.casefold().split())
-        if not same or same in seen:
-            dropped.append(f"{scenario.scenario_id} ({scenario.recipe}): empty or repeated text")
-            continue
-        seen.add(same)
-        item, problems = to_item(scenario, text, final_origin, stack, world, today=today)
+        else:
+            item, problems = _accept(scenario, text, "template", stack, world, seen, today=today)
         if item is None:
             dropped.append(f"{scenario.scenario_id} ({scenario.recipe}): {'; '.join(problems)}")
         else:

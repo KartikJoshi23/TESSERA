@@ -71,7 +71,7 @@ OUT_OF_COVERAGE_WORDS = (
 )
 
 #: The rule that puts an activity outside a licence, for each register.
-_SCOPE_RULE = {"CMA": "SCOPE-CMA-01", "DFSA": "SCOPE-DFSA-01", "VARA": "SCOPE-VARA-02"}
+_SCOPE_RULE = {"CMA": "SCOPE-CMA-03", "DFSA": "SCOPE-DFSA-01", "VARA": "SCOPE-VARA-02"}
 
 _COINED_FIRST = (
     "Bluewave",

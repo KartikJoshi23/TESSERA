@@ -395,12 +395,65 @@ async def test_a_paraphrase_goes_out_masked_and_comes_back_clear(world, populate
     assert named and not [item for item in named if "⟦" in item.text]
 
 
+def with_kept_strings(payload):
+    """A faithful paraphrase: the listed strings, in other words."""
+    listed = payload["messages"][1]["content"].split("exactly:\n")[1].split("\n\nMessage:")[0]
+    kept = [line[2:] for line in listed.splitlines()]
+    return chat_reply(f"Reworded for you: {'; '.join(kept)}.")
+
+
+def public_scenarios(world):
+    """Four scenarios, which the registered mix makes two paraphrases and two templates."""
+    return [s for s in sample_scenarios(world, 4, seed=7) if not s.restricted][:4]
+
+
+@in_loop
+async def test_a_paraphrase_that_comes_back_empty_gets_one_more_try(world, populated_settings):
+    """The first live run: replies ran out of room while the model reasoned, and held no text."""
+    replies = iter([chat_reply("", finish_reason="length"), with_kept_strings])
+
+    def reply(payload):
+        step = next(replies, with_kept_strings)
+        return step(payload) if callable(step) else step
+
+    stack = build_stack(populated_settings, ScriptedTransport([reply] * 8), EventStore(), MODELS)
+    built = await build_message_items(
+        public_scenarios(world), stack, world, today=TODAY, seed=2, use_model=True, people=False
+    )
+    assert "paraphrase" in [item.origin for item in built.items]
+    assert not [line for line in built.dropped if "empty" in line]
+
+
+@in_loop
+async def test_a_refused_paraphrase_is_dropped_after_its_second_try(world, populated_settings):
+    """A refusal keeps none of the strings, so it fails the checks. It is never kept or hidden."""
+    calls = []
+
+    def reply(payload):
+        calls.append(payload)
+        return chat_reply("I can't rewrite this message.")
+
+    stack = build_stack(populated_settings, ScriptedTransport([reply] * 8), EventStore(), MODELS)
+    built = await build_message_items(
+        public_scenarios(world), stack, world, today=TODAY, seed=2, use_model=True, people=False
+    )
+    assert len(calls) == 4, "two paraphrases, two tries each"
+    assert "paraphrase" not in [item.origin for item in built.items]
+    assert len([line for line in built.dropped if "missing" in line]) == 2
+
+
+def test_a_paraphrase_is_told_to_keep_the_service_the_same():
+    system, user = paraphrase_messages("Text.", ("alpha.example",))
+    assert "same service" in system["content"]
+    assert "marketer" not in user["content"]
+
+
 @in_loop
 async def test_a_failed_paraphrase_loses_only_itself(world, populated_settings):
     def reply(payload):
-        if "fail" in seen:
+        if len(seen) == 2:
             raise TransientLLMError("the provider went away")
-        seen.append("fail")
+        seen.append("empty")
         return chat_reply("")
 
     seen = []

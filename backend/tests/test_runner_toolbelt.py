@@ -50,6 +50,13 @@ def run(setup, spec=SPEC, limits=None):
     return asyncio.run(runner.run(spec, "Please check this."))
 
 
+def run_reasoning(setup):
+    """A runner whose model has a reasoning switch, set on as in every primary run."""
+    runner = runner_for(setup)
+    runner._extra_body = {"chat_template_kwargs": {"enable_thinking": True}}
+    return asyncio.run(runner.run(SPEC, "Please check this."))
+
+
 # ------------------------------------------------------------------- tool belt
 
 
@@ -292,11 +299,55 @@ def test_a_reply_that_repeats_itself_runs_the_call_once(harness):
     assert [m["role"] for m in messages[-3:]] == ["assistant", "tool", "tool"]
 
 
-def test_a_failed_call_may_be_tried_again(harness):
+def test_a_failed_call_is_not_tried_again_with_the_same_arguments(harness):
+    """The live run: the single agent sent one failing call 10 times over."""
     bad = ("no_such_tool", {"x": 1})
     setup = harness(OFFER, tool_reply(bad), tool_reply(bad), json_reply({"answer": "done"}))
     result = run(setup)
+    assert result.ok and result.repeats == 1
+    assert "same answer" in setup.transport.payloads[-1]["messages"][-1]["content"]
+
+
+def test_a_failed_call_may_be_corrected(harness):
+    bad = ("no_such_tool", {"x": 1})
+    better = ("no_such_tool", {"x": 2})
+    setup = harness(OFFER, tool_reply(bad), tool_reply(better), json_reply({"answer": "done"}))
+    result = run(setup)
     assert result.ok and result.repeats == 0
+
+
+def reasoning_switch(payload):
+    return payload["chat_template_kwargs"]["enable_thinking"]
+
+
+def test_a_reply_cut_off_at_its_limit_is_repaired_with_reasoning_off(harness):
+    """The live run: 5 of 37 Reconciler replies spent the whole allowance before any JSON."""
+    setup = harness(OFFER, chat_reply("", finish_reason="length"), json_reply({"answer": "done"}))
+    result = run_reasoning(setup)
+    assert result.ok and result.repairs == 1
+    first, repair = setup.transport.payloads
+    assert reasoning_switch(first) is True and reasoning_switch(repair) is False
+    assert "length limit" in repair["messages"][-1]["content"]
+    assert setup.board.store.of_types("agent.repair")[0].payload["cut_off"] is True
+
+
+def test_other_repairs_keep_reasoning_on(harness):
+    setup = harness(OFFER, chat_reply("not json"), json_reply({"answer": "done"}))
+    assert run_reasoning(setup).ok
+    assert [reasoning_switch(p) for p in setup.transport.payloads] == [True, True]
+
+
+def test_a_cut_off_reply_on_a_model_with_no_switch_is_repaired_as_it_was(harness):
+    setup = harness(OFFER, chat_reply("", finish_reason="length"), json_reply({"answer": "done"}))
+    assert run(setup).ok
+    assert all("chat_template_kwargs" not in p for p in setup.transport.payloads)
+
+
+def test_a_turn_cut_off_twice_fails_rather_than_loops(harness):
+    cut_off = chat_reply("", finish_reason="length")
+    setup = harness(OFFER, cut_off, cut_off)
+    result = run_reasoning(setup)
+    assert not result.ok and result.failure == "invalid_output" and result.requests == 2
 
 
 def test_a_repair_never_leaves_an_unanswered_tool_call_in_the_history(harness):

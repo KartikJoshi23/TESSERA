@@ -26,3 +26,18 @@ rules:
         url: https://fxnewsgroup.com/forex-news/retail-forex/exclusive-cfds-broker-startrader-adds-uae-sca-category-five-license
         note: Secondary; verify against the CMA rulebook.
     last_reviewed: 2026-11-03
+
+  - id: SCOPE-CMA-03
+    regulator: CMA
+    statement: >-
+      A CMA register entry lists the activities its licence covers, in any category. An activity
+      on the list is covered. An activity not on the list is not licensed. An entry that lists
+      no activities settles nothing.
+    applies_when: [regulator:CMA]
+    effect: licence_scope:covered only for listed activities; unknown if the entry lists none
+    status: needs_verification
+    sources:
+      - title: CMA Licensed Companies page, as recorded in PS.md (source [5])
+        url: https://www.uaecma.gov.ae/en/open-data/licensed-companies.aspx
+        note: Check against the export that each entry shows its activities.
+    last_reviewed: 2026-11-05

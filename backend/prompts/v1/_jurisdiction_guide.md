@@ -9,6 +9,7 @@
 
 - An activity is what the offer sells. Instructions for paying for it, such as a bank transfer or a deposit, are not an activity.
 - Be cautious. Missing a relevant regulator can cause false reassurance, so when in doubt use `possible`.
+- A free-zone regulator needs a sign of its zone. With no address, name, claim or other signal pointing to the DIFC or ADGM, the DFSA and FSRA are `not_indicated`. Having no zone signal is not doubt about a free zone, and the DFSA's lists are searched either way.
 - Several regulators can be relevant at once (JUR-08).
 - A zone claimed in the offer is only a claim. A claimed DIFC address makes the DFSA relevant, but on its own it does not exclude VARA or the CMA.
 - Targeting UAE clients can add the CMA (JUR-04). It never removes a regulator.
@@ -24,4 +25,4 @@
 | Dubai outside the DIFC | VARA; CMA possible | CMA | CBUAE |
 | Other emirates | CMA | CMA | CBUAE |
 | Outside the UAE, targeting the UAE | CMA; VARA possible | CMA | CBUAE |
-| Unknown | VARA, CMA, DFSA, FSRA possible | CMA, DFSA, FSRA possible | CBUAE, DFSA, FSRA possible |
+| Unknown | VARA, CMA possible | CMA possible | CBUAE possible |

@@ -79,10 +79,13 @@ def render_template(scenario: Scenario, rng: random.Random) -> str:
 
 
 PARAPHRASE_SYSTEM = (
-    "You rewrite clearly synthetic offer messages for a research dataset. The firms and details "
-    "are invented or masked. Keep the meaning, and keep each listed string exactly as written, "
-    "including any placeholder in double square brackets. Do not add contact details, firms, "
-    "numbers or claims. Reply with the rewritten message and nothing else."
+    "You reword invented messages for a research dataset. It tests a tool that helps people "
+    "compare an investment offer with official registers. The messages are never sent to anyone, "
+    "and every firm and detail is invented or masked. Keep the meaning: the service on offer must "
+    "stay the same service, so do not turn safekeeping into earning a return, or advice into "
+    "trading. Keep each listed string exactly as written, including any placeholder in double "
+    "square brackets. Do not add contact details, firms, numbers or claims. Reply with the "
+    "reworded message and nothing else."
 )
 
 
@@ -93,7 +96,7 @@ def paraphrase_messages(text: str, keep: tuple[str, ...]) -> list[dict[str, str]
         {
             "role": "user",
             "content": (
-                "Rewrite this message in a different voice, as a real marketer might send it. "
+                "Reword this message in a different voice. "
                 f"Keep these strings exactly:\n{listed}\n\nMessage:\n{text}"
             ),
         },

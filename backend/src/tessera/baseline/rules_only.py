@@ -46,7 +46,7 @@ from tessera.protocol.results import FinalResult, ProposedResult, ResultClaim
 from tessera.reporting.report import compose_final
 from tessera.tools.extract import detect_zone
 
-SCOPE_RULES = {"CMA": "SCOPE-CMA-02", "DFSA": "SCOPE-DFSA-01", "VARA": "SCOPE-VARA-01"}
+SCOPE_RULES = {"CMA": "SCOPE-CMA-03", "DFSA": "SCOPE-DFSA-01", "VARA": "SCOPE-VARA-01"}
 _AGENTS = {"CMA": AgentId.CMA, "DFSA": AgentId.DFSA, "VARA": AgentId.VARA}
 _DOMAIN_KINDS = (ContactKind.URL, ContactKind.DOMAIN, ContactKind.EMAIL)
 _PHONE_KINDS = (ContactKind.PHONE, ContactKind.WHATSAPP)
@@ -392,19 +392,14 @@ _MATRIX: dict[str, dict[str, dict[str, str]]] = {
         "capital_markets": {"CMA": "primary"},
     },
     "UNKNOWN": {
-        "virtual_assets": {
-            "VARA": "possible",
-            "CMA": "possible",
-            "DFSA": "possible",
-            "FSRA": "possible",
-        },
-        "capital_markets": {"CMA": "possible", "DFSA": "possible", "FSRA": "possible"},
+        "virtual_assets": {"VARA": "possible", "CMA": "possible"},
+        "capital_markets": {"CMA": "possible"},
     },
 }
 _BANKING: dict[str, dict[str, str]] = {
     "DIFC": {"DFSA": "primary"},
     "ADGM": {"FSRA": "primary"},
-    "UNKNOWN": {"CBUAE": "possible", "DFSA": "possible", "FSRA": "possible"},
+    "UNKNOWN": {"CBUAE": "possible"},
 }
 
 
@@ -513,7 +508,7 @@ class RulesOnly(ToolCrew):
             return "unknown", SCOPE_RULES[regulator]
         if any(word in activities for word in words):
             return "yes", SCOPE_RULES[regulator]
-        return "no", "SCOPE-CMA-01" if regulator == "CMA" else "SCOPE-VARA-02"
+        return "no", "SCOPE-CMA-03" if regulator == "CMA" else "SCOPE-VARA-02"
 
     def _opinion(self, regulator: str) -> None:
         """There is one reader here, so relevance is stated once, by :meth:`jurisdiction`."""

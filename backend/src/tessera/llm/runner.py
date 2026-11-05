@@ -50,6 +50,7 @@ _NO_NEW_CALLS = (
 )
 #: A reply of nothing but repeats gets a note this many times. The next one closes the tools.
 _REPEAT_REPLIES_ALLOWED = 1
+_CUT_OFF = "the reply reached its length limit before the JSON object was finished"
 
 
 class Belt(Protocol):
@@ -109,6 +110,14 @@ class TurnResult:
         return self.output is not None
 
 
+def _reasoning_off(extra_body: dict[str, Any]) -> dict[str, Any]:
+    """The same request fields with reasoning off, for a model that has that switch."""
+    template = extra_body.get("chat_template_kwargs")
+    if not template or "enable_thinking" not in template:
+        return extra_body
+    return {**extra_body, "chat_template_kwargs": {**template, "enable_thinking": False}}
+
+
 def _call_key(call: ToolCall) -> tuple[str, str]:
     """Two calls are the same whatever order their arguments came in."""
     try:
@@ -164,7 +173,12 @@ class AgentRunner:
         return (None, problems) if problems else (output, [])
 
     async def _complete(
-        self, spec: AgentSpec, messages: list[dict[str, Any]], tools: Any, round: int
+        self,
+        spec: AgentSpec,
+        messages: list[dict[str, Any]],
+        tools: Any,
+        round: int,
+        extra_body: dict[str, Any],
     ) -> ChatResponse:
         self.meter.check()
         payload = build_payload(
@@ -172,7 +186,7 @@ class AgentRunner:
             messages=messages,
             decoding=self._decoding,
             tools=tools,
-            extra_body=self._extra_body,
+            extra_body=extra_body,
         )
         request_hash = hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:16]
         started = time.monotonic()
@@ -215,15 +229,17 @@ class AgentRunner:
         ]
         tools = self._belt.definitions(spec.tool_names) if spec.tool_names else None
         cap = self._limits.tool_calls_per_turn
-        # Tools are deterministic, so a repeat cannot help. A model can loop on one for a whole
-        # allowance, which costs more where the allowance is larger, so this is shared by all.
+        # Tools are deterministic, so a repeat cannot help, and a failed call fails the same way
+        # again. A model can loop on one for a whole allowance, which costs more where the
+        # allowance is larger, so this is shared by all.
         answered: set[tuple[str, str]] = set()
         repeat_replies = 0
+        extra_body = self._extra_body
         while True:
             closed = repeat_replies > _REPEAT_REPLIES_ALLOWED
             offered = tools if result.tool_calls < cap and not closed else None
             try:
-                response = await self._complete(spec, messages, offered, round)
+                response = await self._complete(spec, messages, offered, round, extra_body)
             except RequestBudgetExceeded as exc:
                 self._board.record("budget.exceeded", spec.agent_id, {"detail": str(exc)})
                 return self._fail(result, "budget_exceeded", str(exc))
@@ -249,15 +265,14 @@ class AgentRunner:
                         content = _REPEATED_CALL
                     else:
                         new_calls += 1
-                        content, succeeded = self._belt.execute(
+                        answered.add(key)
+                        content, _ = self._belt.execute(
                             call.name,
                             call.arguments,
                             allowed=spec.tool_names,
                             actor=spec.agent_id,
                             round=round,
                         )
-                        if succeeded:
-                            answered.add(key)
                     messages.append({"role": "tool", "tool_call_id": call.id, "content": content})
                 if not new_calls:
                     repeat_replies += 1
@@ -271,11 +286,18 @@ class AgentRunner:
             if output is not None:
                 result.output = output
                 return result
+            cut_off = response.finish_reason == "length"
+            if cut_off:
+                # A model that spent its whole allowance reasoning would only do so again.
+                extra_body = _reasoning_off(extra_body)
+                problems = [_CUT_OFF]
             if result.repairs >= self._limits.repair_attempts:
                 return self._fail(result, "invalid_output", "; ".join(problems))
             result.repairs += 1
             self._board.record(
-                "agent.repair", spec.agent_id, {"round": round, "problems": problems[:3]}
+                "agent.repair",
+                spec.agent_id,
+                {"round": round, "problems": problems[:3], "cut_off": cut_off},
             )
             # Any tool calls here went unanswered, and a provider rejects those in a history.
             messages.append({"role": "assistant", "content": strip_reasoning(response.content)})

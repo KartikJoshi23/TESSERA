@@ -163,6 +163,8 @@ def test_rule_cards_are_evidence(ctx):
     assert single.evidence[0].fields["rule_id"] == "SCOPE-CMA-01"
     vara = {e.fields["rule_id"] for e in get_rule_card(ctx, regulator="VARA").evidence}
     assert {"JUR-01", "SCOPE-VARA-01", "SCOPE-VARA-02", "CLONE-01"} <= vara
+    cma = {e.fields["rule_id"] for e in get_rule_card(ctx, regulator="CMA").evidence}
+    assert {"SCOPE-CMA-01", "SCOPE-CMA-02", "SCOPE-CMA-03"} <= cma
 
 
 def test_registry_exposes_restricted_values_for_masking(ctx):

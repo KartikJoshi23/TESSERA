@@ -57,7 +57,8 @@ Everything else broken down by factor is exploratory, and is labelled that way.
   as SA-BASE's.
 - **Reasoning setting:** on, the model's default, for every condition. On or off is the model's only
   control, so SA-MAX differs from SA-BASE only in its longer output allowance. SA-SC5 is the arm that
-  spends the extra compute in a different way.
+  spends the extra compute in a different way. In every condition, a reply cut off at its output
+  limit is repaired with reasoning off.
 - **A system that gives no result** is scored as "Could not verify", and failures are reported.
 - **Prompts:** the same number of revisions for both systems, at most 5 each, on development data
   only, logged in `backend/prompts/CHANGELOG.md`.
@@ -79,3 +80,6 @@ Each entry gives the date, what changed and why.
 | 2026-11-05 | Pace set to 7.5 requests a minute, not 35 | Measured with no retries: about 8 a minute get through on this free key. A full run takes about a week, not 45 hours (§11.5) |
 | 2026-11-05 | SA-MAX defined as SA-BASE with twice the output allowance | The plan assumed a higher reasoning setting, but the model only offers on or off, and on is the default for all. 32,768 tokens a reply covers the crew's median output of about 27K tokens a case. Only 1 of 136 single-agent replies reached the normal allowance, so SA-MAX may differ little from SA-BASE |
 | 2026-11-05 | Pace set to 4 requests a minute, not 7.5 | Steady six-minute probes sustained under 4 a minute, and live runs held at 4.0. The earlier figure came from one-minute probes, where a first burst hid the sustained rate. A full run takes about two weeks of continuous running (§11.5) |
+| 2026-11-05 | A reply cut off at its output limit is repaired with reasoning off, in every condition | 5 of 37 Reconciler replies spent the whole allowance before any JSON, and a repair with reasoning on could only do the same (F61). The runner is shared, so no condition is favoured |
+| 2026-11-05 | The starting matrix's Unknown row no longer lists the DFSA and FSRA | A free-zone regulator now needs a sign of its zone (F63). Every covered register is still searched, so no check is lost. The change is in shared guidance, so both systems get it |
+| 2026-11-05 | New rule card SCOPE-CMA-03, for CMA scope in any category | The cards covered only Category 5 (F64). The card is shared, and it needs checking against the CMA export |

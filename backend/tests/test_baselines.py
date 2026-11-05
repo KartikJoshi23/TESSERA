@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from tessera.agents.crew import build_stack
-from tessera.baseline.rules_only import read_offer
+from tessera.baseline.rules_only import RulesOnly, read_offer
 from tessera.blackboard.board import Blackboard
 from tessera.blackboard.store import EventStore
 from tessera.config.settings import Mode
@@ -111,6 +111,31 @@ def test_rules_only_keeps_the_strongest_status_when_an_offer_spans_groups(harnes
 def test_rules_only_keeps_an_unknown_regulators_name(harness):
     reading = read_offer(harness(CASES["S25"].offer().text).env)
     assert reading.regulator[0] == "UAE Financial Trade Authority"
+
+
+def test_a_free_zone_regulator_needs_a_sign_of_its_zone(harness):
+    """With no zone signal, nothing makes the DFSA or the FSRA relevant (F63)."""
+    silent = read_offer(harness("Forex trading with Silver Palm at silverpalm.example.").env)
+    assert set(silent.relevant) == {"CMA"}
+    pointed = read_offer(harness("Forex trading from Al Maryah Island, ADGM.").env)
+    assert pointed.relevant.get("FSRA") == "primary"
+
+
+def test_rules_only_cites_a_card_that_fits_any_cma_category(harness):
+    """Desert Lantern is Category 2, so a card about Category 5 says nothing about it (F64)."""
+    env = harness("Desert Lantern Capital offers fund management.").env
+    env.belt.execute(
+        "cma_register_lookup",
+        json.dumps({"name": "Desert Lantern Capital"}),
+        allowed=("cma_register_lookup",),
+        actor=AgentId.CMA,
+        round=1,
+    )
+    entry = next(r for r in env.board.evidence.values() if r.fields.get("activities"))
+    assert entry.fields["category"] == "Category 2"
+    crew = RulesOnly(env, read_offer(env))
+    assert crew.scope_of("CMA", "FUND.MGMT", entry) == ("yes", "SCOPE-CMA-03")
+    assert crew.scope_of("CMA", "SEC.BROKERAGE", entry) == ("no", "SCOPE-CMA-03")
 
 
 def test_rules_only_finds_a_beneficiary(harness):

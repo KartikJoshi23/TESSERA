@@ -73,7 +73,9 @@ The same fictional development cases, one setting at a time, in one sitting.
 | Single agent, reasoning off | 24 of 25 | 226 | 175 | 1,769 |
 
 Reasoning stays on. It is the registered default, it never scored lower, and tokens are not what
-this free tier limits. The crew's one miss with it on was a bug, since fixed: a model's label on an
+this free tier limits. The one exception, in every condition, is that a reply cut off at its output
+limit is repaired with reasoning off, since a model that spent its whole allowance reasoning would
+only do so again. The crew's one miss with it on was a bug, since fixed: a model's label on an
 alert found only by domain. Its one miss with it off came from the Verifier's own reading.
 
 The request gap overstates the case. Most of it came from repeated tool calls, which the runner now
