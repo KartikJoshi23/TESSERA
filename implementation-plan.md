@@ -1794,4 +1794,5 @@ Each change keeps to the approved design, or moves it for the reason given.
 | F53 | 6 | A provider failure is kept as a marker, not a result. It can be retried, and if it is still there at reporting it is scored as "Could not verify" and counted beside the scores | An outage must be visible, and dropping it would favour whichever system fails most |
 | F54 | 6 | The report adds an interval for each system, a breakdown by factor and the H5 interaction test (`focus_factors` in `eval/plan.yaml`). The Lab reads this one file, and a test ties its fields to the report | One source for every number, so a chart cannot disagree with the table beside it |
 | F55 | 6 | `tessera-eval readiness` lists what is missing before a run, against the targets for each stratum | The data work is by hand, and a gap is cheaper to find before a week of requests |
+| F56 | 6 | An alert found only through a contact point is posted as `contact_listed`, whatever a model called it | Same cause as F45. S13 names no firm, and a model's "entity unauthorised" failed G2 twice, turning a right answer into "Could not verify" |
 

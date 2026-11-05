@@ -40,7 +40,7 @@ LIST_KINDS = frozenset(
     {EvidenceKind.ALERT_ENTRY, EvidenceKind.WARNING_ENTRY, EvidenceKind.UNLICENSED_ENTRY}
 )
 CONTACT_MATCHES = frozenset({"domain", "phone", "email", "email_domain", "contact_named"})
-_NAME_MATCHES = frozenset({"name", "firm_named", "frn_named"})
+NAME_MATCHES = frozenset({"name", "firm_named", "frn_named"})
 _DOMAIN_KINDS = frozenset({ContactKind.URL, ContactKind.DOMAIN, ContactKind.EMAIL})
 _PHONE_KINDS = frozenset({ContactKind.PHONE, ContactKind.WHATSAPP})
 _UNAUTHORISED_CATEGORIES = frozenset({"false_claim_of_authorisation", "unauthorised_firm"})
@@ -220,7 +220,7 @@ class ClaimChecker:
         if a.about == "contact_listed" and not on & CONTACT_MATCHES:
             return ["the record does not name a contact point from this offer"]
         if a.about == "entity_unauthorised":
-            if not on & _NAME_MATCHES:
+            if not on & NAME_MATCHES:
                 return ["the record does not name this entity"]
             if category is not None and category not in _UNAUTHORISED_CATEGORIES:
                 return [f"the record's category is {category}"]

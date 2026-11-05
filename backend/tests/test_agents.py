@@ -342,6 +342,28 @@ def test_an_invented_evidence_id_is_kept_and_flagged(harness):
     assert finding.unknown_evidence_ids == ("E-feedfacefeedface",)
 
 
+def test_a_list_entry_found_by_domain_lists_the_contact_not_the_firm(harness):
+    """The live run: S13 names no firm, and calling this an entity finding failed G2 twice."""
+
+    def final(payload):
+        hit = tool_results(payload)[0]["matches"][0]
+        return json_reply(
+            {
+                "relevance": {"status": "possible"},
+                "alerts": [{"evidence_id": hit["evidence_id"], "about": "entity_unauthorised"}],
+            }
+        )
+
+    setup = harness(
+        text_of("S13"),
+        tool_reply(("cma_warnings_lookup", {"domain": "goldendune-fx.example"})),
+        final,
+    )
+    assert setup.turn(AgentId.CMA).repairs == 0
+    assertion = setup.board.live_findings("alert_hit")[0].assertion
+    assert assertion.about == "contact_listed" and assertion.matched_on == "domain"
+
+
 def test_a_register_match_states_how_the_tool_matched_it(harness):
     """The live run: a model called a reference-number match "exact", and failed gate G2 twice."""
     setup = harness(text_of("S09"))

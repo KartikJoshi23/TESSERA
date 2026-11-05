@@ -13,7 +13,9 @@ from tessera.agents.schemas import RegisterItem, RegulatorOutput
 from tessera.blackboard.board import Blackboard
 from tessera.blackboard.views import regulator_view
 from tessera.llm.prompts import render_activities, render_rule_cards
+from tessera.orchestration.support import CONTACT_MATCHES, NAME_MATCHES, matched_on
 from tessera.protocol.claims import (
+    AlertAbout,
     AlertHit,
     CoverageGap,
     LicenceScope,
@@ -23,7 +25,7 @@ from tessera.protocol.claims import (
     Relevance,
 )
 from tessera.protocol.common import AgentId, Regulator, clip_words
-from tessera.protocol.evidence import REGISTER_SOURCES
+from tessera.protocol.evidence import REGISTER_SOURCES, EvidenceRecord
 from tessera.tools.matching import MATCH_RANK
 
 
@@ -150,7 +152,7 @@ class RegulatorAgent(Agent):
                 AlertHit(
                     source_id=record.source_id if record else "unknown",
                     alert_evidence_id=alert.evidence_id,
-                    about=alert.about,
+                    about=self._as_the_list_reads(record, alert.about),
                     matched_on=alert.matched_on
                     or (str(record.fields.get("matched_on", "")) if record else ""),
                 ),
@@ -167,6 +169,18 @@ class RegulatorAgent(Agent):
             )
         self.handle_conversation(env, task, output)
         return posted
+
+    @staticmethod
+    def _as_the_list_reads(record: EvidenceRecord | None, about: AlertAbout) -> AlertAbout:
+        """An entry found only through a contact point lists that contact, not this firm.
+
+        The offer may not name a firm at all. What the entry matched is a tool's answer, and it
+        decides this, as it does for the rules-only baseline.
+        """
+        if record is None or about != "entity_unauthorised":
+            return about
+        on = matched_on(record)
+        return "contact_listed" if on & CONTACT_MATCHES and not on & NAME_MATCHES else about
 
     @staticmethod
     def _one_match_per_entry(board: Blackboard, items: list[RegisterItem]) -> list[RegisterItem]:
