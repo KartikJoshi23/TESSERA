@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
 import json
 import sys
 import tempfile
@@ -25,35 +26,36 @@ from tessera.errors import PolicyError
 from tessera.evaluation.components import component_report
 from tessera.evaluation.entities import build_entity_items
 from tessera.evaluation.firms import load_world
+from tessera.evaluation.freezing import fingerprint, freeze_manifest, frozen_problems, pin_run
 from tessera.evaluation.harness import Harness, load_records
 from tessera.evaluation.items import EvalItem, Split, content_hash, read_items, write_items
 from tessera.evaluation.leakage import scan
-from tessera.evaluation.messages import build_message_items
+from tessera.evaluation.messages import build_message_items, import_written
 from tessera.evaluation.metrics import summarize
 from tessera.evaluation.plan import jobs_for, load_plan, plan_hash
 from tessera.evaluation.report import evaluation_report, outcomes_by_condition, render_text
-from tessera.evaluation.review import compare_labels, export_sheet, read_sheet
-from tessera.evaluation.scenarios import sample_scenarios
-from tessera.evaluation.splits import assign_splits, of_split
+from tessera.evaluation.review import compare_labels, export_sheet, read_sheet, settle
+from tessera.evaluation.scenarios import (
+    Scenario,
+    sample_scenarios,
+    scenario_from_json,
+    scenario_to_json,
+)
+from tessera.evaluation.splits import assign_splits, balanced_sample, of_split
 from tessera.evaluation.statistics import mcnemar_power
 from tessera.evaluation.writing import writing_brief
 from tessera.governance.policies import load_decision_policy
 from tessera.knowledge import load_activity_taxonomy
 from tessera.llm.config import load_models_policy
-from tessera.llm.stack import build_live_transport
-from tessera.llm.types import PermanentLLMError
+from tessera.llm.stack import NoModelTransport, build_live_transport
 from tessera.protocol.case import SystemCondition
+from tessera.protocol.common import ResultCode
 
+BRIEFS = "briefs.csv"
+SCENARIOS = "scenarios-for-people.jsonl"
 DEFAULT_SEED = 20261105
 #: RULES-ONLY above this on the development split means the messages are too formulaic (§11.2 D).
 DIFFICULTY_LIMIT = 0.7
-
-
-class _NoModel:
-    """For work that needs no model. Reaching this is a bug, and it says so."""
-
-    async def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
-        raise PermanentLLMError("this command does not call a model")
 
 
 def _stack(args: argparse.Namespace, *, model: bool, log: Path) -> tuple[CrewStack, date, Any]:
@@ -73,7 +75,7 @@ def _stack(args: argparse.Namespace, *, model: bool, log: Path) -> tuple[CrewSta
     models = load_models_policy(settings.policies_dir)
     if args.thinking:
         models = models.with_thinking(args.thinking == "on")
-    transport: Any = _NoModel()
+    transport: Any = NoModelTransport()
     http = None
     if model:
         transport, http = build_live_transport(settings, models)
@@ -89,17 +91,34 @@ def _world(stack: CrewStack) -> Any:
     return load_world(stack.registry, taxonomy), taxonomy
 
 
-def _save(items: list[EvalItem], out: Path, *, seed: int) -> None:
-    """Public and restricted items in their own files, each one already split."""
-    split = assign_splits(items, seed=seed)
+def restricted_home(out: Path) -> Path:
+    """Where DFSA-derived work for ``out`` goes: a sibling ``restricted`` folder.
+
+    ``datasets/message_level`` becomes ``datasets/restricted/message_level``, so deleting
+    ``datasets/restricted`` removes every DFSA value, as the data-governance notes promise.
+    """
+    return out.parent / "restricted" / out.name
+
+
+def _file_for(out: Path, part: Split, *, restricted: bool) -> Path:
+    return (restricted_home(out) if restricted else out) / part.value / "items.jsonl"
+
+
+def _write_split(items: list[EvalItem], out: Path, *, adding: bool = False) -> None:
+    """Public and restricted items in their own files. ``adding`` keeps what the files hold."""
     for part in Split:
-        chosen = of_split(split, part)
-        plain = [item for item in chosen if not item.restricted]
-        held = [item for item in chosen if item.restricted]
-        if plain:
-            write_items(out / part.value / "items.jsonl", plain)
-        if held:
-            write_items(out / "restricted" / part.value / "items.jsonl", held)
+        for restricted in (False, True):
+            path = _file_for(out, part, restricted=restricted)
+            new = [i for i in of_split(items, part) if i.restricted is restricted]
+            old = read_items(path) if adding and path.exists() else []
+            if new or old:
+                write_items(path, [*old, *new])
+            elif path.exists():
+                path.unlink()  # left by an earlier build, and not part of this one
+
+
+def _save(items: list[EvalItem], out: Path, *, seed: int) -> None:
+    _write_split(assign_splits(items, seed=seed), out)
     labels = Counter(item.gold_label.value for item in items)
     print(f"{len(items)} items: {dict(labels)}. Hash {content_hash(items)[:16]}")
 
@@ -139,18 +158,58 @@ async def _build_messages(args: argparse.Namespace) -> int:
         if http is not None:
             await http.aclose()
     _save(list(built.items), args.out, seed=args.seed)
-    if built.for_people:
-        briefs = args.out / "briefs.jsonl"
-        briefs.write_text(
-            "".join(
-                json.dumps(writing_brief(s), ensure_ascii=False) + "\n" for s in built.for_people
-            ),
-            encoding="utf-8",
-        )
-        print(f"{len(built.for_people)} briefs for people to write: {briefs}")
+    for restricted in (False, True):
+        people = [s for s in built.for_people if s.restricted is restricted]
+        if people:
+            folder = restricted_home(args.out) if restricted else args.out
+            _write_briefs(people, folder)
+            print(f"{len(people)} briefs for people to write: {folder / BRIEFS}")
     for line in built.dropped:
         print(f"dropped: {line}")
     print(f"dropped {len(built.dropped)} of {len(scenarios)} scenarios")
+    return 0
+
+
+def _write_briefs(scenarios: list[Scenario], folder: Path) -> None:
+    """A sheet for the writers, and the scenarios it came from, to check their messages against."""
+    folder.mkdir(parents=True, exist_ok=True)
+    briefs = [writing_brief(scenario) for scenario in scenarios]
+    with (folder / BRIEFS).open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(briefs[0]))
+        writer.writeheader()
+        writer.writerows(briefs)
+    lines = (json.dumps(scenario_to_json(s), ensure_ascii=False) for s in scenarios)
+    (folder / SCENARIOS).write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+
+
+def _written(args: argparse.Namespace) -> int:
+    """Bring in what people wrote. Each message passes the same checks as generated ones."""
+    stack, today, _ = _stack(args, model=False, log=_scratch_log())
+    world, _ = _world(stack)
+    with args.briefs.open(encoding="utf-8", newline="") as handle:
+        written = {row["scenario_id"]: row["text"] for row in csv.DictReader(handle)}
+    lines = (args.briefs.parent / SCENARIOS).read_text(encoding="utf-8").splitlines()
+    scenarios = [scenario_from_json(json.loads(line)) for line in lines if line.strip()]
+    built = import_written(written, scenarios, stack, world, today=today)
+    _write_split(assign_splits(list(built.items), seed=args.seed), args.out, adding=True)
+    for line in built.dropped:
+        print(f"dropped: {line}")
+    print(f"added {len(built.items)} messages, dropped {len(built.dropped)}")
+    return 0
+
+
+def _settle(args: argparse.Namespace) -> int:
+    """Apply what discussion settled. A blank label drops the item, and every drop is listed."""
+    with args.decisions.open(encoding="utf-8", newline="") as handle:
+        decisions = {
+            row["item_id"]: ResultCode(row["label"].strip().upper())
+            if row["label"].strip()
+            else None
+            for row in csv.DictReader(handle)
+        }
+    kept, dropped = settle(read_items(args.items), decisions)
+    write_items(args.items, kept)
+    print(f"{len(kept)} items kept, {len(dropped)} dropped: {', '.join(dropped) or 'none'}")
     return 0
 
 
@@ -183,6 +242,9 @@ async def _probe(args: argparse.Namespace) -> int:
     await Harness(stack, run_dir, today=today).run(jobs)
     table = outcomes_by_condition(items, load_records(run_dir))
     outcomes = list(table[SystemCondition.RULES_ONLY.value].values())
+    if not outcomes:
+        print("tessera-eval: no items to probe")
+        return 2
     summary = summarize(outcomes)
     matched = sum(outcome.gold is outcome.predicted for outcome in outcomes)
     print(f"RULES-ONLY matches {matched} of {len(outcomes)}, macro-F1 {summary['macro_f1']:.3f}")
@@ -191,14 +253,39 @@ async def _probe(args: argparse.Namespace) -> int:
     return 0
 
 
+def _sealed_problems(
+    args: argparse.Namespace, items: list[EvalItem], print_: dict[str, str]
+) -> list[str]:
+    """Real test items run only against a freeze that still matches (§11.2 D)."""
+    if args.fiction or not any(item.split is Split.TEST for item in items):
+        return []
+    if args.frozen is None:
+        return ["test items need --frozen: the test split is sealed until a freeze"]
+    return frozen_problems(json.loads(args.frozen.read_text("utf-8")), items, print_)
+
+
 async def _run(args: argparse.Namespace) -> int:
     items = _load(args.items)
     if args.limit:
-        items = items[: args.limit]
+        items = balanced_sample(items, args.limit, seed=args.seed)
     args.run_dir.mkdir(parents=True, exist_ok=True)
     stack, today, http = _stack(args, model=True, log=args.run_dir / "events.sqlite")
     path = stack.settings.root / "eval" / "plan.yaml"
     plan = load_plan(path)
+    print_ = fingerprint(stack.settings, stack.models)
+    problems = _sealed_problems(args, items, print_)
+    today, pinned = pin_run(
+        args.run_dir,
+        print_,
+        today,
+        stated=date.fromisoformat(args.today) if args.today else None,
+    )
+    if problems or pinned:
+        for line in (*problems, *pinned):
+            print(f"tessera-eval: {line}", file=sys.stderr)
+        if http is not None:
+            await http.aclose()
+        return 2
     conditions = (
         [SystemCondition(name.strip()) for name in args.conditions.split(",")]
         if args.conditions
@@ -227,7 +314,17 @@ async def _run(args: argparse.Namespace) -> int:
 def _report(args: argparse.Namespace) -> int:
     root = load_settings().root
     plan = load_plan(root / "eval" / "plan.yaml")
-    report = evaluation_report(_load(args.items), load_records(args.run_dir), plan)
+    items = _load(args.items)
+    if args.split == "all":
+        chosen = items
+    elif args.split:
+        chosen = of_split(items, Split(args.split))
+    elif len({item.split for item in items}) > 1:
+        print("tessera-eval: these items span dev and test, so choose one with --split")
+        return 2
+    else:
+        chosen = items
+    report = evaluation_report(chosen, load_records(args.run_dir), plan)
     if args.out:
         args.out.write_text(json.dumps(report, indent=1), encoding="utf-8")
     print(render_text(report))
@@ -297,17 +394,22 @@ def _lab(args: argparse.Namespace) -> int:
 def _freeze(args: argparse.Namespace) -> int:
     """Write the hash of a finished set, so any later change to it can be seen."""
     items = _load(args.items)
-    levels = {item.level.value for item in items}
-    manifest = {
-        "items": len(items),
-        "hash": content_hash(items),
-        "levels": sorted(levels),
-        "by_split": dict(Counter(item.split.value if item.split else "none" for item in items)),
-    }
+    settings = load_settings(mode=Mode.RESEARCH_INTERNAL)
+    models = load_models_policy(settings.policies_dir)
+    if args.thinking:
+        models = models.with_thinking(args.thinking == "on")
+    manifest = freeze_manifest(items, fingerprint(settings, models))
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
     print(f"frozen: {len(items)} items, hash {content_hash(items)[:16]}")
     return 0
+
+
+def _at_least_one(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be 1 or more")
+    return number
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -353,16 +455,20 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--items", type=Path, nargs="+", required=True)
     run.add_argument("--run-dir", type=Path, required=True)
     run.add_argument("--conditions", help="comma-separated, for a part of the plan")
-    run.add_argument("--limit", type=int, help="only the first N items")
+    run.add_argument("--limit", type=int, help="N items, balanced across the labels")
+    run.add_argument("--frozen", type=Path, help="the freeze that real test items must match")
     run.add_argument("--no-stability", action="store_true")
     run.add_argument("--max-requests", type=int)
     run.add_argument("--hours", type=float, help="stop starting cases after this long")
-    run.add_argument("--parallel", type=int, default=1, help="cases at once, sharing the limit")
+    run.add_argument(
+        "--parallel", type=_at_least_one, default=1, help="cases at once, sharing the limit"
+    )
 
     report = commands.add_parser("report", help="score a run")
     report.add_argument("--items", type=Path, nargs="+", required=True)
     report.add_argument("--run-dir", type=Path, required=True)
     report.add_argument("--out", type=Path)
+    report.add_argument("--split", choices=["dev", "test", "all"], help="needed if items span both")
 
     components = commands.add_parser("components", help="check the tools, with no model")
     common(components)
@@ -386,6 +492,16 @@ def build_parser() -> argparse.ArgumentParser:
     freeze = commands.add_parser("freeze", help="record the hash of a finished set")
     freeze.add_argument("--items", type=Path, nargs="+", required=True)
     freeze.add_argument("--out", type=Path, required=True)
+    freeze.add_argument("--thinking", choices=["on", "off"])
+
+    written = commands.add_parser("written", help="bring in messages people wrote")
+    common(written)
+    written.add_argument("--briefs", type=Path, required=True, help="the filled-in briefs.csv")
+    written.add_argument("--out", type=Path, required=True)
+
+    settled = commands.add_parser("settle", help="apply labels settled by discussion")
+    settled.add_argument("--items", type=Path, required=True)
+    settled.add_argument("--decisions", type=Path, required=True, help="item_id,label as CSV")
     return parser
 
 
@@ -414,6 +530,10 @@ def main(argv: list[str] | None = None) -> int:
             return _power(args)
         if args.command == "leakage":
             return _leakage(args)
+        if args.command == "written":
+            return _written(args)
+        if args.command == "settle":
+            return _settle(args)
         return _freeze(args)
     except PolicyError as exc:
         print(f"tessera-eval: {exc}", file=sys.stderr)

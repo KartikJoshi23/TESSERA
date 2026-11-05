@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from tessera.evaluation.statistics import percentile
 from tessera.protocol.common import ResultCode
 
 LABELS = (ResultCode.CONSISTENT, ResultCode.CONFLICTS, ResultCode.UNVERIFIED)
@@ -159,23 +160,33 @@ def reason_recall(outcomes: Sequence[Outcome]) -> float | None:
     return _ratio(sum(len(set(o.gold_reasons) & set(o.reasons)) for o in right), expected)
 
 
+_UNCOVERED = frozenset({"CBUAE", "FSRA"})
+
+
 def jurisdiction_scores(outcomes: Sequence[Outcome]) -> dict[str, float | None]:
-    """Per-item Jaccard similarity, and micro precision and recall over (item, regulator) pairs."""
+    """Per-item Jaccard similarity, micro precision and recall, and recall of coverage gaps.
+
+    A coverage gap is a relevant regulator Phase 1 has no records for. Saying so matters most,
+    because a gap that goes unnoticed turns into a false "Consistent".
+    """
     judged = [o for o in outcomes if o.gold_relevant]
     if not judged:
-        return {"jaccard": None, "precision": None, "recall": None}
+        return {"jaccard": None, "precision": None, "recall": None, "gap_recall": None}
     jaccards = []
-    true_positive = predicted = actual = 0
+    true_positive = predicted = actual = gaps = gaps_found = 0
     for outcome in judged:
         gold, found = set(outcome.gold_relevant), set(outcome.relevant)
         jaccards.append(len(gold & found) / len(gold | found))
         true_positive += len(gold & found)
         predicted += len(found)
         actual += len(gold)
+        gaps += len(gold & _UNCOVERED)
+        gaps_found += len(gold & found & _UNCOVERED)
     return {
         "jaccard": sum(jaccards) / len(jaccards),
         "precision": _ratio(true_positive, predicted),
         "recall": _ratio(true_positive, actual),
+        "gap_recall": _ratio(gaps_found, gaps),
     }
 
 
@@ -189,21 +200,19 @@ def scope_rule_accuracy(outcomes: Sequence[Outcome]) -> float | None:
     return _ratio(sum(o.gold is o.predicted for o in scoped), len(scoped))
 
 
-def _percentile(values: Sequence[float], share: float) -> float | None:
-    if not values:
-        return None
-    ordered = sorted(values)
-    return ordered[min(int(share * len(ordered)), len(ordered) - 1)]
-
-
 def compute_cost(outcomes: Sequence[Outcome]) -> dict[str, float | None]:
+    """Requests and tokens compare systems. Seconds are wall time, for planning a run.
+
+    Wall time includes waiting behind the rate limiter and any cases running alongside, so it does
+    not measure how fast a system is unless a run used one case at a time.
+    """
     count = len(outcomes)
-    seconds = [o.seconds for o in outcomes]
+    seconds = sorted(o.seconds for o in outcomes)
     return {
         "requests_per_case": _ratio(sum(o.requests for o in outcomes), count),
         "tokens_per_case": _ratio(sum(o.tokens for o in outcomes), count),
-        "seconds_p50": _percentile(seconds, 0.5),
-        "seconds_p95": _percentile(seconds, 0.95),
+        "seconds_p50": percentile(seconds, 0.5) if seconds else None,
+        "seconds_p95": percentile(seconds, 0.95) if seconds else None,
     }
 
 

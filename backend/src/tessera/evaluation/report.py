@@ -7,7 +7,7 @@ paired: it uses only the items both systems answered. All results are reported, 
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from tessera.evaluation.items import EvalItem, Level
@@ -37,7 +37,7 @@ def to_outcome(item: EvalItem, record: dict[str, Any]) -> Outcome:
         item_id=item.item_id,
         gold=item.gold_label,
         predicted=ResultCode(record["result"]),
-        failed=bool(record.get("failures")),
+        failed=bool(record.get("gave_no_result") or record.get("failures")),
         factors=item.factors,
         stratum=item.stratum,
         gold_relevant=item.gold_relevant,
@@ -83,12 +83,28 @@ def _difference(metric: str, pairs: Sequence[_Pair]) -> float:
     return (first or 0.0) - (second or 0.0)
 
 
+def _is_right(outcome: Outcome) -> bool:
+    return outcome.gold is outcome.predicted
+
+
+def _event_for(
+    metric: str, pairs: Sequence[_Pair]
+) -> tuple[Callable[[Outcome], bool], Sequence[_Pair]]:
+    """What McNemar counts: false reassurance, or a right answer (§11.4)."""
+    if metric == "false_reassurance":
+        return false_reassurance, [p for p in pairs if p[0].gold is not ResultCode.CONSISTENT]
+    return _is_right, pairs
+
+
 def compare(table: dict[str, dict[str, Outcome]], comparison: Comparison) -> dict[str, Any]:
     pairs = _pairs(table, comparison)
     if not pairs:
         return {"name": comparison.name, "pairs": 0}
     metric = comparison.metric
     interval = paired_bootstrap(pairs, lambda sample: _difference(metric, sample))
+    first_event, eligible = _event_for(metric, pairs)
+    only_first = sum(first_event(a) and not first_event(b) for a, b in eligible)
+    only_second = sum(first_event(b) and not first_event(a) for a, b in eligible)
     report: dict[str, Any] = {
         "name": comparison.name,
         "first": comparison.first.value,
@@ -98,16 +114,10 @@ def compare(table: dict[str, dict[str, Outcome]], comparison: Comparison) -> dic
         "difference": interval.estimate,
         "ci_low": interval.low,
         "ci_high": interval.high,
+        "only_first": only_first,
+        "only_second": only_second,
+        "p_value": exact_mcnemar(only_first, only_second),
     }
-    if metric == "false_reassurance":
-        eligible = [(a, b) for a, b in pairs if a.gold is not ResultCode.CONSISTENT]
-        only_first = sum(false_reassurance(a) and not false_reassurance(b) for a, b in eligible)
-        only_second = sum(false_reassurance(b) and not false_reassurance(a) for a, b in eligible)
-        report |= {
-            "only_first": only_first,
-            "only_second": only_second,
-            "p_value": exact_mcnemar(only_first, only_second),
-        }
     return report
 
 
@@ -136,6 +146,28 @@ def stability(
     }
 
 
+def sampled_stability(
+    items: Sequence[EvalItem], records: Sequence[dict[str, Any]]
+) -> dict[str, Any]:
+    """SA-BASE's stability, from the five samples behind each SA-SC5 answer (§11.4)."""
+    known = {item.item_id for item in items}
+    rows = [
+        [result for result, count in record["votes"].items() for _ in range(count)]
+        for record in records
+        if record["condition"] == SystemCondition.SA_SC5.value
+        and record["item_id"] in known
+        and record.get("votes")
+    ]
+    if not rows:
+        return {"condition": SystemCondition.SA_BASE.value, "items": 0}
+    return {
+        "condition": SystemCondition.SA_BASE.value,
+        "items": len(rows),
+        "fleiss_kappa": fleiss_kappa(rows),
+        "flip_rate": sum(len(set(row)) > 1 for row in rows) / len(rows),
+    }
+
+
 def level_report(
     items: Sequence[EvalItem], records: Sequence[dict[str, Any]], plan: RunPlan, level: Level
 ) -> dict[str, Any]:
@@ -145,20 +177,26 @@ def level_report(
     registered = [compare(table, comparison) for comparison in plan.registered]
     secondary = [compare(table, comparison) for comparison in plan.secondary]
     tested = {c["name"]: c["p_value"] for c in secondary if "p_value" in c}
-    adjusted = holm_bonferroni(tested) if tested else {}
+    adjusted = holm_bonferroni(tested)
     for comparison in secondary:
         if comparison["name"] in adjusted:
             comparison["p_holm"] = adjusted[comparison["name"]]
     return {
         "level": level.value,
         "items": len(chosen),
-        "systems": {name: summarize(list(found.values())) for name, found in table.items()},
+        "systems": {
+            name: {**summarize(list(found.values())), "not_yet_run": len(chosen) - len(found)}
+            for name, found in table.items()
+        },
         "registered": registered,
         "secondary": secondary,
         "non_inferiority": _non_inferiority(registered, plan.non_inferiority_margin),
         "stability": [
-            stability(chosen, records, condition, runs)
-            for condition, runs in plan.stability.runs.items()
+            sampled_stability(chosen, records),
+            *(
+                stability(chosen, records, condition, runs)
+                for condition, runs in plan.stability.runs.items()
+            ),
         ],
     }
 

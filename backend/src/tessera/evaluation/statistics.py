@@ -54,7 +54,7 @@ class Interval:
         return self.low > 0 or self.high < 0
 
 
-def _percentile(ordered: Sequence[float], share: float) -> float:
+def percentile(ordered: Sequence[float], share: float) -> float:
     """Linear interpolation between ranks, on sorted values."""
     position = share * (len(ordered) - 1)
     lower = int(position)
@@ -77,7 +77,7 @@ def paired_bootstrap(
     size = len(pairs)
     drawn = sorted(statistic(rng.choices(pairs, k=size)) for _ in range(resamples))
     tail = (1 - confidence) / 2
-    return Interval(statistic(pairs), _percentile(drawn, tail), _percentile(drawn, 1 - tail))
+    return Interval(statistic(pairs), percentile(drawn, tail), percentile(drawn, 1 - tail))
 
 
 def cohen_kappa(first: Sequence[str], second: Sequence[str]) -> float:

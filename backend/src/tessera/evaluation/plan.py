@@ -87,11 +87,13 @@ def jobs_for(
 ) -> list[Job]:
     """Item by item, so a run stopped part way still holds complete pairs to compare."""
     wanted = set(conditions) if conditions else None
+    # An optional system, such as SA-LARGER, is not in the plan's list but can be asked for.
+    named = tuple(condition for condition in conditions or () if condition not in plan.primary)
     jobs: list[Job] = []
     for index, item in enumerate(items):
         jobs += [
             Job(item, condition)
-            for condition in plan.primary
+            for condition in (*plan.primary, *named)
             if wanted is None or condition in wanted
         ]
         extra = plan.stability

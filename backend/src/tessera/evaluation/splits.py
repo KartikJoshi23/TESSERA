@@ -42,5 +42,19 @@ def assign_splits(items: Sequence[EvalItem], *, seed: int) -> list[EvalItem]:
     return assigned
 
 
+def balanced_sample(items: Sequence[EvalItem], size: int, *, seed: int) -> list[EvalItem]:
+    """``size`` items taken from each label in turn. Files are grouped, so a slice would not be."""
+    by_label: dict[str, list[EvalItem]] = defaultdict(list)
+    for item in sorted(items, key=lambda item: _position(item, seed)):
+        by_label[item.gold_label.value].append(item)
+    queues = [by_label[label] for label in sorted(by_label)]
+    chosen: list[EvalItem] = []
+    while len(chosen) < size and any(queues):
+        for queue in queues:
+            if queue and len(chosen) < size:
+                chosen.append(queue.pop(0))
+    return chosen
+
+
 def of_split(items: Sequence[EvalItem], split: Split) -> list[EvalItem]:
     return [item for item in items if item.split is split]

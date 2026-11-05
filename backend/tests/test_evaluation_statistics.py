@@ -178,6 +178,14 @@ def test_jurisdiction_scores_are_per_item_and_over_pairs():
     assert scores["recall"] == pytest.approx(2 / 3)
 
 
+def test_coverage_gaps_have_a_recall_of_their_own():
+    outcomes = [
+        outcome(U, U, gold_relevant=("CBUAE",), relevant=("CBUAE",)),
+        outcome(U, C, gold_relevant=("FSRA",), relevant=("CMA",)),
+    ]
+    assert jurisdiction_scores(outcomes)["gap_recall"] == pytest.approx(0.5)
+
+
 def test_scope_accuracy_reads_only_the_scope_items():
     outcomes = [
         outcome(X, X, factors=("F7",)),

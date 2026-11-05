@@ -40,8 +40,7 @@ from tessera.config.settings import Mode, Settings, load_settings
 from tessera.devdata import FICTION_DATE, install_world
 from tessera.errors import PolicyError, SyntheticInputRejected
 from tessera.llm.config import load_models_policy
-from tessera.llm.stack import build_live_transport
-from tessera.llm.types import PermanentLLMError
+from tessera.llm.stack import NoModelTransport, build_live_transport
 
 LOCAL_HOSTS = ["127.0.0.1", "localhost"]
 #: The Next.js development server (Part 5).
@@ -173,19 +172,12 @@ def create_app(service: CaseService) -> FastAPI:
     return app
 
 
-class _NoModel:
-    """Stands in for the transport when no key is set. The service never reaches it."""
-
-    async def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
-        raise PermanentLLMError("no model is configured")
-
-
 def _not_ready_stack(
     settings: Settings, store: EventStore, reason: str, today: date | None
 ) -> CaseService:
     """Without a key, finished cases can still be read, and RULES-ONLY can still run."""
     models = load_models_policy(settings.policies_dir)
-    stack = build_stack(settings, _NoModel(), store, models)
+    stack = build_stack(settings, NoModelTransport(), store, models)
     return CaseService(stack, model_ready=False, not_ready_reason=reason, today=today)
 
 

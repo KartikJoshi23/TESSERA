@@ -4,6 +4,7 @@ Everything here runs on the fictional world, through the same code real records 
 """
 
 import asyncio
+import json
 import random
 import re
 
@@ -19,7 +20,7 @@ from tessera.evaluation.components import (
     name_matcher,
 )
 from tessera.evaluation.entities import build_entity_items
-from tessera.evaluation.firms import load_world
+from tessera.evaluation.firms import Firm, load_world
 from tessera.evaluation.items import (
     EvalItem,
     Level,
@@ -37,8 +38,14 @@ from tessera.evaluation.review import (
     read_sheet,
     settle,
 )
-from tessera.evaluation.scenarios import lookalike, respelled, sample_scenarios
-from tessera.evaluation.splits import DEV_SHARE, assign_splits, of_split
+from tessera.evaluation.scenarios import (
+    lookalike,
+    respelled,
+    sample_scenarios,
+    scenario_from_json,
+    scenario_to_json,
+)
+from tessera.evaluation.splits import DEV_SHARE, assign_splits, balanced_sample, of_split
 from tessera.evaluation.validators import (
     missing_facts,
     personal_data,
@@ -54,6 +61,7 @@ from tessera.governance.policies import load_decision_policy
 from tessera.knowledge import load_activity_taxonomy
 from tessera.llm.config import load_models_policy
 from tessera.llm.testing import ScriptedTransport, chat_reply
+from tessera.llm.types import TransientLLMError
 from tessera.protocol.common import ResultCode
 
 from .conftest import REPO_ROOT
@@ -191,6 +199,7 @@ def test_every_registered_factor_has_a_recipe(world):
 def test_a_respelling_keeps_the_name_recognisable():
     assert respelled("Al Dhow Capital") == "El Dhow Capital"
     assert respelled("Harbour Cedar") == "Harbur Cedar"
+    assert respelled("Azure Dhow Digital") == "Azure Dow Digital"
     assert respelled("Falcon Ridge") is None
 
 
@@ -227,9 +236,65 @@ def test_recipes_get_the_labels_they_intend(world, stack):
         label = policy_label(
             stack, f"label-{scenario.scenario_id}", text, scenario.reading, today=TODAY
         )
-        if label.decision.result is not scenario.intended:
-            missed.append((scenario.recipe, label.decision.result.value))
+        if label.result is not scenario.intended:
+            missed.append((scenario.recipe, label.result.value))
     assert len(missed) <= 2, missed
+
+
+def test_every_scenario_has_its_own_id(world):
+    """Two results begin with the same letters, and a run keeps one record per ID."""
+    names = [s.scenario_id for s in sample_scenarios(world, 30, seed=7)]
+    assert len(set(names)) == len(names)
+
+
+def test_repeated_ids_cannot_be_written(tmp_path):
+    with pytest.raises(ValueError, match="repeat"):
+        write_items(tmp_path / "items.jsonl", [item("M-1"), item("M-1")])
+
+
+def test_an_invented_domain_is_never_one_somebody_could_own():
+    rng = random.Random(1)
+    for _ in range(50):
+        assert lookalike("falconridge.ae", rng).endswith(".example")
+
+
+def test_details_of_dfsa_firms_are_never_altered(world, stack, taxonomy):
+    """The gateway would not recognise a changed value, so it would reach a model in clear."""
+    recipes = {"variant_spelling", "imitated_domain", "injected_instruction"}
+    for scenario in sample_scenarios(world, 40, seed=3):
+        if scenario.recipe in recipes:
+            assert not scenario.restricted
+    built = build_entity_items(world, stack, taxonomy, today=TODAY, seed=1)
+    assert not [card for card in built.items if card.stratum == "E11" and card.restricted]
+
+
+def test_a_dfsa_firm_s_short_name_is_masked_before_any_model_sees_it(world, stack):
+    for firm in world.of("DFSA"):
+        assert firm.short_name not in stack.gateway.mask(f"Hello from {firm.short_name}.")
+
+
+def test_an_injection_must_survive_rewording(world):
+    scenarios = sample_scenarios(world, 40, seed=7)
+    injected = [s for s in scenarios if "F15" in s.factors]
+    assert injected and all(s.slots["aside"] in s.keep for s in injected)
+
+
+def test_a_scenario_survives_being_saved(world):
+    for scenario in sample_scenarios(world, 12, seed=7):
+        assert scenario_from_json(json.loads(json.dumps(scenario_to_json(scenario)))) == scenario
+
+
+def test_an_alert_finds_its_firm_despite_small_differences(world):
+    assert world.firm_named("LUMEN CREST CAPITAL (DIFC) LTD").name.startswith("Lumen Crest")
+    assert world.firm_named("Somebody Else Entirely") is None
+    assert world.firm_named(None) is None
+
+
+def test_a_legal_ending_must_be_a_whole_word():
+    firm = Firm(
+        "CMA", "1", "Wealth Unlimited", "active", None, None, None, None, None, (), (), False
+    )
+    assert firm.short_name == "Wealth Unlimited"
 
 
 def test_a_paraphrase_may_reword_the_quotes_and_keep_the_reading(world):
@@ -257,6 +322,11 @@ def test_a_paraphrase_request_lists_what_must_survive():
 def test_a_writing_brief_holds_no_label(world):
     brief = writing_brief(sample_scenarios(world, 1, seed=7)[0])
     assert not {"intended", "label", "gold", "recipe", "factors"} & set(brief)
+
+
+def test_a_writing_brief_says_what_the_offer_is_about(world):
+    scenario = sample_scenarios(world, 1, seed=7)[0]
+    assert writing_brief(scenario)["offer_about"] == scenario.slots["activity"]
 
 
 async def _no_people(stack, world, scenarios, **changes):
@@ -324,6 +394,39 @@ async def test_a_paraphrase_goes_out_masked_and_comes_back_clear(world, populate
     assert named and not [item for item in named if "⟦" in item.text]
 
 
+@in_loop
+async def test_a_failed_paraphrase_loses_only_itself(world, populated_settings):
+    def reply(payload):
+        if "fail" in seen:
+            raise TransientLLMError("the provider went away")
+        seen.append("fail")
+        return chat_reply("")
+
+    seen = []
+    transport = ScriptedTransport([reply] * 40)
+    stack = build_stack(populated_settings, transport, EventStore(), MODELS)
+    built = await build_message_items(
+        sample_scenarios(world, 8, seed=7),
+        stack,
+        world,
+        today=TODAY,
+        seed=5,
+        use_model=True,
+        people=False,
+    )
+    assert built.items, "what was built before the failures is kept"
+    assert any("empty or repeated" in line for line in built.dropped)
+    assert any("keeps failing" in line for line in built.dropped)
+
+
+@in_loop
+async def test_the_same_text_is_kept_once(world, stack):
+    scenarios = sample_scenarios(world, 60, seed=7)
+    built = await _no_people(stack, world, scenarios)
+    texts = [item.text.casefold() for item in built.items]
+    assert len(set(texts)) == len(texts)
+
+
 # ------------------------------------------------------------------ checks
 
 
@@ -337,6 +440,21 @@ def test_a_stray_domain_is_caught_and_a_reserved_one_is_not(world):
     scenario = sample_scenarios(world, 1, seed=7)[0]
     assert stray_identifiers("See invented-site.com for more.", scenario, world)
     assert not stray_identifiers("See invented-site.example for more.", scenario, world)
+
+
+def test_a_register_domain_nobody_chose_is_caught(world):
+    scenario = next(
+        s for s in sample_scenarios(world, 6, seed=7) if "coralledger.example" not in s.keep
+    )
+    problems = stray_identifiers("Also see coralledger.example today.", scenario, world)
+    assert problems == ["unexpected domain 'coralledger.example'"]
+
+
+def test_a_firm_nobody_chose_is_caught(world):
+    scenario = next(
+        s for s in sample_scenarios(world, 6, seed=7) if "Silver Palm" not in " ".join(s.keep)
+    )
+    assert stray_identifiers("Backed by Silver Palm Advisers.", scenario, world)
 
 
 def test_real_looking_personal_data_is_caught():
@@ -377,6 +495,18 @@ def test_a_split_is_reproducible_and_seeded():
     assert first == again and first != other
 
 
+def test_a_sample_is_balanced_even_though_files_are_grouped():
+    grouped = sorted(make_items(30), key=lambda i: i.gold_label.value)
+    chosen = balanced_sample(grouped, 9, seed=1)
+    assert len(chosen) == 9
+    for label in ResultCode:
+        assert sum(i.gold_label is label for i in chosen) == 3
+
+
+def test_a_sample_copes_with_too_few_items():
+    assert len(balanced_sample(make_items(4), 9, seed=1)) == 4
+
+
 def test_small_strata_still_add_up():
     items = [item(f"M-{i}", factors=(f"F{i}",)) for i in range(20)]
     assert len(of_split(assign_splits(items, seed=1), Split.DEV)) == 6
@@ -390,6 +520,13 @@ def test_a_review_sheet_is_blind(tmp_path):
     sheet = export_sheet([secret], tmp_path / "sheet.csv", annotator="A", seed=1)
     text = sheet.read_text(encoding="utf-8")
     assert "CONFLICTS" not in text and "HC1" not in text and "F7" not in text
+
+
+def test_a_review_sheet_of_restricted_items_stays_restricted(tmp_path):
+    with pytest.raises(PermissionError):
+        export_sheet([item(restricted=True)], tmp_path / "a.csv", annotator="A", seed=1)
+    path = tmp_path / "restricted" / "a.csv"
+    assert export_sheet([item(restricted=True)], path, annotator="A", seed=1).exists()
 
 
 def test_annotators_get_their_own_order(tmp_path):
@@ -431,6 +568,13 @@ def test_settling_changes_labels_and_lists_every_drop():
     assert dropped == ["M-2"]
     assert [i.item_id for i in kept] == ["M-1", "M-3"]
     assert kept[0].gold_label is ResultCode.UNVERIFIED
+
+
+def test_a_changed_label_drops_reasons_that_belonged_to_the_old_one():
+    kept, _ = settle([item("M-1", gold_reasons=("HC1",))], {"M-1": ResultCode.UNVERIFIED})
+    assert kept[0].gold_reasons == ()
+    same, _ = settle([item("M-1", gold_reasons=("HC1",))], {"M-1": ResultCode.CONFLICTS})
+    assert same[0].gold_reasons == ("HC1",)
 
 
 # ------------------------------------------------------------------ the components
@@ -504,6 +648,14 @@ def test_each_stratum_gets_its_registered_label(world, stack, taxonomy):
     for card in built.items:
         if card.stratum in expected:
             assert card.gold_label is expected[card.stratum], card.text
+
+
+def test_e8_holds_only_category_five_firms(world, stack, taxonomy):
+    built = build_entity_items(world, stack, taxonomy, today=TODAY, seed=1)
+    cards = [card for card in built.items if card.stratum == "E8"]
+    fives = {f.name for f in world.of("CMA") if "5" in f.category}
+    assert cards
+    assert all(any(name in card.text for name in fives) for card in cards)
 
 
 def test_cards_from_dfsa_facts_are_restricted_and_others_are_not(world, stack, taxonomy):

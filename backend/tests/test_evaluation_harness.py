@@ -1,15 +1,27 @@
 """The run harness and the reports, driven through the same code a real run uses."""
 
+import argparse
+import asyncio
+import csv
 import json
+from datetime import date
+from pathlib import Path
 
 import pytest
 
 from tessera.agents.crew import build_stack
 from tessera.blackboard.store import EventStore
 from tessera.devdata import FICTION_DATE, load_smoke_cases
-from tessera.evaluation.cli import build_parser, main
+from tessera.errors import RestrictedValueLeak
+from tessera.evaluation.cli import _sealed_problems, build_parser, main, restricted_home
+from tessera.evaluation.freezing import (
+    fingerprint,
+    freeze_manifest,
+    frozen_problems,
+    pin_run,
+)
 from tessera.evaluation.harness import Harness, load_records, record_path
-from tessera.evaluation.items import EvalItem, Level, read_items
+from tessera.evaluation.items import EvalItem, Level, Split, read_items
 from tessera.evaluation.plan import Job, jobs_for, load_plan, plan_hash
 from tessera.evaluation.report import (
     compare,
@@ -17,6 +29,7 @@ from tessera.evaluation.report import (
     level_report,
     outcomes_by_condition,
     render_text,
+    sampled_stability,
     stability,
     to_outcome,
 )
@@ -105,6 +118,11 @@ def test_stability_runs_use_the_registered_temperature_and_their_own_numbers():
     assert runs == [1, 2, 3]
 
 
+def test_an_optional_system_can_be_asked_for():
+    jobs = jobs_for([smoke_item("S01")], PLAN, conditions=[SystemCondition.SA_LARGER])
+    assert [job.condition for job in jobs] == [SystemCondition.SA_LARGER]
+
+
 def test_a_part_of_the_plan_can_be_run():
     jobs = jobs_for([smoke_item("S01")], PLAN, conditions=[RULES])
     assert [job.condition for job in jobs] == [RULES]
@@ -170,6 +188,94 @@ async def test_a_case_cut_short_is_not_appended_to(harness, stack):
     await harness.run([job])
     saved = json.loads(record_path(harness.run_dir, job).read_text("utf-8"))
     assert saved["case_id"] == f"{job.name}~retry1"
+
+
+@in_loop
+async def test_a_case_the_provider_cut_short_is_not_a_result(harness, monkeypatch):
+    """An outage ends each case as "Could not verify", and that says nothing about a system."""
+    real = harness.run_job
+    broken = True
+
+    async def outage(job):
+        record = await real(job)
+        return {**record, "failures": [{"code": "model_error"}]} if broken else record
+
+    monkeypatch.setattr(harness, "run_job", outage)
+    job = Job(smoke_item("S09"), RULES)
+    first = await harness.run([job])
+    assert first.done == 0 and first.failed == 1
+    assert not record_path(harness.run_dir, job).exists()
+    assert load_records(harness.run_dir)[0]["gave_no_result"] is True
+
+    broken = False
+    second = await harness.run([job])
+    assert second.done == 1
+    records = load_records(harness.run_dir)
+    assert len(records) == 1 and "gave_no_result" not in records[0]
+
+
+@in_loop
+async def test_an_outage_stops_the_run(harness, monkeypatch):
+    real = harness.run_job
+
+    async def outage(job):
+        return {**await real(job), "failures": [{"code": "model_error"}]}
+
+    monkeypatch.setattr(harness, "run_job", outage)
+    jobs = [Job(smoke_item(case), RULES) for case in ("S01", "S02", "S03", "S04", "S05")]
+    progress = await harness.run(jobs)
+    assert progress.failed == 3 and "failures in a row" in progress.stopped_because
+
+
+@in_loop
+async def test_a_rule_breaking_reply_is_how_a_system_behaved_so_it_stands(harness, monkeypatch):
+    real = harness.run_job
+
+    async def invalid(job):
+        return {**await real(job), "failures": [{"code": "invalid_output"}]}
+
+    monkeypatch.setattr(harness, "run_job", invalid)
+    progress = await harness.run([Job(smoke_item("S01"), RULES)])
+    assert progress.done == 1
+
+
+@in_loop
+async def test_a_leak_guard_ends_the_run(harness, monkeypatch):
+    async def leak(job):
+        raise RestrictedValueLeak("a value was about to leave")
+
+    monkeypatch.setattr(harness, "run_job", leak)
+    with pytest.raises(RestrictedValueLeak):
+        await harness.run([Job(smoke_item("S01"), RULES), Job(smoke_item("S02"), RULES)])
+
+
+def test_a_crash_is_scored_as_could_not_verify():
+    item = smoke_item("S09")
+    outcome = to_outcome(item, {"item_id": "S09", "result": "UNVERIFIED", "gave_no_result": True})
+    assert outcome.predicted is ResultCode.UNVERIFIED and outcome.failed
+
+
+def test_at_least_one_case_must_run_at_a_time(harness):
+    with pytest.raises(ValueError, match="at least one"):
+        asyncio.run(harness.run([], parallel=0))
+
+
+@in_loop
+async def test_a_stop_stays_a_stop_when_another_case_then_succeeds(harness, monkeypatch):
+    real = harness.run_job
+    calls = 0
+
+    async def flaky(job):
+        nonlocal calls
+        calls += 1
+        if calls <= 3:
+            raise RuntimeError("down")
+        return await real(job)
+
+    monkeypatch.setattr(harness, "run_job", flaky)
+    jobs = [Job(smoke_item(case), RULES) for case in ("S01", "S02", "S03", "S04", "S05", "S09")]
+    progress = await harness.run(jobs, parallel=1)
+    assert progress.stopped_because == "3 failures in a row" and calls == 3
 
 
 @in_loop
@@ -289,6 +395,46 @@ def test_the_primary_comparison_measures_false_reassurance():
     assert result["p_value"] == pytest.approx(0.5)
 
 
+def test_usefulness_has_a_test_of_its_own_on_right_answers():
+    items, records = items_and_records()
+    result = compare(outcomes_by_condition(items, records), PLAN.registered[1])
+    # The crew is right everywhere. The single agent is wrong on S09 and S10.
+    assert result["only_first"] == 2 and result["only_second"] == 0
+    assert result["p_value"] == pytest.approx(0.5)
+
+
+def test_every_secondary_comparison_is_in_the_correction():
+    items, records = items_and_records()
+    extra = [
+        record(item.item_id, name, item.gold_label.value)
+        for item in items
+        for name in ("CREW-SHARE", "CREW-SILO")
+    ]
+    report = level_report(items, records + extra, PLAN, Level.MESSAGE)
+    sharing = [c for c in report["secondary"] if c.get("first") == "CREW-SHARE"]
+    assert {c["metric"] for c in sharing} == {"false_reassurance", "macro_f1"}
+    assert all("p_holm" in c for c in sharing)
+
+
+def test_a_report_says_what_has_not_run_yet():
+    items, records = items_and_records()
+    partial = [r for r in records if not (r["condition"] == "SA-BASE" and r["item_id"] == "S11")]
+    report = level_report(items, partial, PLAN, Level.MESSAGE)
+    assert report["systems"]["SA-BASE"]["not_yet_run"] == 1
+    assert report["systems"]["CREW-FULL"]["not_yet_run"] == 0
+
+
+def test_the_baseline_s_stability_comes_from_its_five_samples():
+    items = [smoke_item("S01"), smoke_item("S09")]
+    records = [
+        record("S01", "SA-SC5", "CONSISTENT", votes={"CONSISTENT": 5}),
+        record("S09", "SA-SC5", "CONFLICTS", votes={"CONFLICTS": 3, "UNVERIFIED": 2}),
+    ]
+    result = sampled_stability(items, records)
+    assert result["condition"] == "SA-BASE"
+    assert result["items"] == 2 and result["flip_rate"] == 0.5
+
+
 def test_a_missing_system_is_reported_as_no_pairs():
     items, records = items_and_records()
     table = outcomes_by_condition(items, records)
@@ -341,14 +487,16 @@ def test_the_pipeline_runs_from_records_to_a_report(monkeypatch, tmp_path, capsy
     assert main(["messages", "--fiction", "--per-label", "6", "--out", str(out)]) == 0
     built = capsys.readouterr().out
     assert "items:" in built and "dropped" in built
-    files = [str(path) for path in out.rglob("items.jsonl")]
+    files = [str(path) for path in tmp_path.rglob("items.jsonl")]
     assert any("restricted" in path for path in files)
     run_dir = tmp_path / "probe"
     assert main(["probe", "--fiction", "--items", *files, "--run-dir", str(run_dir)]) == 0
     assert "RULES-ONLY matches" in capsys.readouterr().out
     report = tmp_path / "report.json"
     arguments = ["report", "--items", *files, "--run-dir", str(run_dir), "--out", str(report)]
-    assert main(arguments) == 0
+    assert main(arguments) == 2, "dev and test must not pool by accident"
+    assert "--split" in capsys.readouterr().out
+    assert main([*arguments, "--split", "all"]) == 0
     assert "MESSAGE LEVEL" in capsys.readouterr().out
     saved = json.loads(report.read_text("utf-8"))
     assert "RULES-ONLY" in saved["levels"]["message"]["systems"]
@@ -380,6 +528,120 @@ def test_no_prompt_or_rule_card_names_a_firm_in_the_records(populated_settings, 
     planted = tmp_path / "card.yaml"
     planted.write_text("Falcon Ridge Securities is a good example.", encoding="utf-8")
     assert scan(world, [tmp_path]) == ["card.yaml: Falcon Ridge Securities"]
+
+
+def test_a_fingerprint_changes_when_what_a_system_is_given_changes(populated_settings):
+    before = fingerprint(populated_settings, MODELS)
+    assert fingerprint(populated_settings, MODELS) == before
+    assert (
+        fingerprint(populated_settings, MODELS.with_thinking(False))["models"] != before["models"]
+    )
+    assert (
+        fingerprint(populated_settings, MODELS.with_decoding(seed=1))["models"] != before["models"]
+    )
+
+
+def test_the_pace_can_change_without_breaking_a_run(populated_settings):
+    faster = MODELS.model_copy(
+        update={"rate_limit": MODELS.rate_limit.model_copy(update={"requests_per_minute": 1.0})}
+    )
+    assert fingerprint(populated_settings, faster) == fingerprint(populated_settings, MODELS)
+
+
+def test_a_frozen_set_must_still_match():
+    items = [smoke_item("S01")]
+    print_ = {"prompts": "a", "plan": "b"}
+    manifest = freeze_manifest(items, print_)
+    assert frozen_problems(manifest, items, print_) == []
+    changed = [items[0].model_copy(update={"text": "Changed."})]
+    assert frozen_problems(manifest, changed, print_) == ["the items differ from the frozen set"]
+    assert frozen_problems(manifest, items, {**print_, "prompts": "z"}) == [
+        "prompts changed since the freeze"
+    ]
+
+
+def _run_args(tmp_path, **changes):
+    fields = {"fiction": False, "frozen": None}
+    return argparse.Namespace(**{**fields, **changes})
+
+
+def test_real_test_items_need_a_freeze(tmp_path):
+    sealed = smoke_item("S01").model_copy(update={"split": Split.TEST})
+    open_item = smoke_item("S02").model_copy(update={"split": Split.DEV})
+    assert _sealed_problems(_run_args(tmp_path), [open_item], {}) == []
+    assert "sealed" in _sealed_problems(_run_args(tmp_path), [sealed], {})[0]
+    assert _sealed_problems(_run_args(tmp_path, fiction=True), [sealed], {}) == []
+
+
+def test_a_run_keeps_its_date_and_refuses_a_change(tmp_path):
+    first = date(2026, 11, 5)
+    assert pin_run(tmp_path, {"prompts": "a"}, first) == (first, [])
+    later = date(2026, 12, 1)
+    assert pin_run(tmp_path, {"prompts": "a"}, later) == (first, [])
+    assert pin_run(tmp_path, {"prompts": "b"}, later)[1] == ["prompts changed since this run began"]
+    assert "not 2026-12-01" in pin_run(tmp_path, {"prompts": "a"}, later, stated=later)[1][0]
+
+
+def test_restricted_work_goes_where_a_purge_will_find_it():
+    home = restricted_home(Path("datasets/message_level"))
+    assert home == Path("datasets/restricted/message_level")
+
+
+def test_people_s_briefs_for_dfsa_scenarios_stay_restricted(tmp_path, capsys):
+    out = tmp_path / "messages"
+    assert main(["messages", "--fiction", "--per-label", "12", "--people", "--out", str(out)]) == 0
+    capsys.readouterr()
+    public = out / "briefs.csv"
+    held = restricted_home(out) / "briefs.csv"
+    assert public.exists() and held.exists()
+    assert "Lumen Crest" not in public.read_text("utf-8")
+    assert "Harbour Cedar" not in public.read_text("utf-8")
+
+
+def test_what_people_wrote_comes_back_through_the_same_checks(tmp_path, capsys):
+    out = tmp_path / "messages"
+    assert main(["messages", "--fiction", "--per-label", "12", "--people", "--out", str(out)]) == 0
+    capsys.readouterr()
+    briefs = out / "briefs.csv"
+    with briefs.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    for row in rows:
+        row["text"] = (
+            f"About {row['offer_about']}: {' '.join(row['must_appear_exactly'].split(' | '))}"
+        )
+    with briefs.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    before = sum(len(read_items(path)) for path in out.rglob("items.jsonl"))
+    assert main(["written", "--fiction", "--briefs", str(briefs), "--out", str(out)]) == 0
+    assert "added" in capsys.readouterr().out
+    after = [item for path in out.rglob("items.jsonl") for item in read_items(path)]
+    assert len(after) > before
+    assert {"human"} <= {item.origin for item in after}
+
+
+def test_settled_labels_can_be_applied(tmp_path, capsys):
+    from tessera.evaluation.items import write_items
+
+    path = tmp_path / "items.jsonl"
+    write_items(path, [smoke_item("S01"), smoke_item("S09")])
+    decisions = tmp_path / "decisions.csv"
+    decisions.write_text("item_id,label\nS01,\nS09,unverified\n", encoding="utf-8")
+    assert main(["settle", "--items", str(path), "--decisions", str(decisions)]) == 0
+    kept = read_items(path)
+    assert [i.item_id for i in kept] == ["S09"] and kept[0].gold_label is ResultCode.UNVERIFIED
+    assert "dropped: S01" in capsys.readouterr().out
+
+
+def test_probing_nothing_says_so(tmp_path, capsys):
+    from tessera.evaluation.items import write_items
+
+    path = tmp_path / "items.jsonl"
+    write_items(path, [])
+    arguments = ["probe", "--fiction", "--items", str(path), "--run-dir", str(tmp_path / "run")]
+    assert main(arguments) == 2
+    assert "no items" in capsys.readouterr().out
 
 
 def test_every_command_parses():

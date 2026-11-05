@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-from tessera.evaluation.items import EvalItem
+from tessera.evaluation.items import EvalItem, guard_restricted
 from tessera.evaluation.statistics import cohen_kappa
 from tessera.protocol.common import ResultCode
 
@@ -29,6 +29,7 @@ TARGET_KAPPA = 0.8
 def export_sheet(items: Sequence[EvalItem], path: Path, *, annotator: str, seed: int) -> Path:
     """A blind sheet for one annotator. No label, factor, stratum or origin appears on it."""
     ordered = list(items)
+    guard_restricted(path, ordered)
     random.Random(f"{seed}:{annotator}").shuffle(ordered)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
@@ -97,5 +98,8 @@ def settle(
         elif (label := settled[item.item_id]) is None:
             dropped.append(item.item_id)
         else:
-            kept.append(item.model_copy(update={"gold_label": label}))
+            # The policy's reasons belong to the policy's label, so a changed label drops them.
+            same = label is item.gold_label
+            reasons = item.gold_reasons if same else ()
+            kept.append(item.model_copy(update={"gold_label": label, "gold_reasons": reasons}))
     return kept, dropped

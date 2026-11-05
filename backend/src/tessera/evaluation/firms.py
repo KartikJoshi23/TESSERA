@@ -7,6 +7,7 @@ made from it carries that mark to ``datasets/restricted/``.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from tessera.baseline.rules_only import REGISTER_WORDS
@@ -21,6 +22,7 @@ from tessera.data.schemas import (
 )
 from tessera.knowledge import ActivityTaxonomy
 from tessera.normalize.domains import registrable_domain
+from tessera.normalize.names import normalize_name
 
 _LEGAL_ENDINGS = (
     "l.l.c.",
@@ -50,6 +52,7 @@ class Firm:
     covers: tuple[str, ...]
     aliases: tuple[str, ...]
     restricted: bool
+    category: str = ""
 
     @property
     def covers_virtual(self) -> bool:
@@ -58,11 +61,12 @@ class Firm:
     @property
     def short_name(self) -> str:
         """The name as an offer would loosely use it, without its legal ending."""
-        lowered = self.name.casefold().rstrip()
+        name = self.name.rstrip()
         for ending in _LEGAL_ENDINGS:
-            if lowered.endswith(ending):
-                return self.name[: len(self.name) - len(ending)].rstrip(" ,.")
-        return self.name
+            # Only a whole word: "Wealth Unlimited" does not end in "limited".
+            if re.search(rf"(?<![\w]){re.escape(ending)}$", name, re.IGNORECASE):
+                return name[: len(name) - len(ending)].rstrip(" ,.")
+        return name
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,7 @@ def _cma(record: CmaLicensedRecord, taxonomy: ActivityTaxonomy) -> Firm | None:
         covers=_covers(record.activities, taxonomy),
         aliases=tuple(record.aliases),
         restricted=False,
+        category=record.category or "",
     )
 
 
@@ -183,10 +188,16 @@ class World:
 
     firms: tuple[Firm, ...]
     listed: tuple[Listed, ...]
-    activity_codes: tuple[str, ...]
 
     def of(self, regulator: str) -> list[Firm]:
         return [firm for firm in self.firms if firm.regulator == regulator]
+
+    def firm_named(self, name: str | None) -> Firm | None:
+        """The firm an alert names. Recorded names differ in small ways, so they are normalised."""
+        if not name:
+            return None
+        key = normalize_name(name).key
+        return next((firm for firm in self.firms if normalize_name(firm.name).key == key), None)
 
     def alerts(self, *categories: str) -> list[Listed]:
         return [entry for entry in self.listed if entry.category in categories]
@@ -214,4 +225,4 @@ def load_world(registry: DataRegistry, taxonomy: ActivityTaxonomy) -> World:
         for record in registry.table("dfsa_alerts").records:
             if isinstance(record, DfsaAlertFact):
                 listed.append(_alert(record))
-    return World(tuple(firms), tuple(listed), tuple(a.code for a in taxonomy.activities))
+    return World(tuple(firms), tuple(listed))

@@ -16,7 +16,7 @@ from __future__ import annotations
 import random
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
 from tessera.baseline.rules_only import Reading
@@ -70,6 +70,9 @@ OUT_OF_COVERAGE_WORDS = (
     "a prepaid card for sending money home",
 )
 
+#: The rule that puts an activity outside a licence, for each register.
+_SCOPE_RULE = {"CMA": "SCOPE-CMA-01", "DFSA": "SCOPE-DFSA-01", "VARA": "SCOPE-VARA-02"}
+
 _COINED_FIRST = (
     "Bluewave",
     "Northgate",
@@ -95,7 +98,34 @@ class Scenario:
     keep: tuple[str, ...]
     restricted: bool = False
     tone: str = "plain"
-    extra: dict[str, Any] = field(default_factory=dict)
+
+
+def scenario_to_json(scenario: Scenario) -> dict[str, Any]:
+    return {**asdict(scenario), "intended": scenario.intended.value}
+
+
+def scenario_from_json(data: dict[str, Any]) -> Scenario:
+    """A scenario read back, so a message a person wrote can be checked against it later."""
+    reading = data["reading"]
+    return Scenario(
+        scenario_id=data["scenario_id"],
+        recipe=data["recipe"],
+        intended=ResultCode(data["intended"]),
+        factors=tuple(data["factors"]),
+        reading=Reading(
+            activities=tuple((code, words) for code, words in reading["activities"]),
+            relevant=reading["relevant"],
+            firm=reading["firm"],
+            regulator=tuple(reading["regulator"]) if reading["regulator"] else None,
+            reference=reading["reference"],
+            not_covered=reading["not_covered"],
+            payment=reading["payment"],
+        ),
+        slots=data["slots"],
+        keep=tuple(data["keep"]),
+        restricted=data["restricted"],
+        tone=data["tone"],
+    )
 
 
 def _coined_firm(rng: random.Random) -> tuple[str, str]:
@@ -109,14 +139,18 @@ def _fiction_phone(rng: random.Random) -> str:
 
 
 def lookalike(domain: str, rng: random.Random) -> str:
-    """A domain imitating ``domain``: swapped letters, or an added word."""
-    stem, _, tld = domain.partition(".")
+    """A domain imitating ``domain``: swapped letters, or an added word.
+
+    It always ends in ``.example``. A domain we invent must not be one somebody could own, so an
+    imitation of a real ``.ae`` site never keeps that ending.
+    """
+    stem = domain.partition(".")[0]
     if rng.random() < 0.5 and len(stem) > 5:
         at = rng.randrange(1, len(stem) - 2)
         twisted = stem[:at] + stem[at + 1] + stem[at] + stem[at + 2 :]
         if twisted != stem:
-            return f"{twisted}.{tld}"
-    return f"{stem}-{rng.choice(('secure', 'invest', 'clients', 'online'))}.{tld}"
+            return f"{twisted}.example"
+    return f"{stem}-{rng.choice(('secure', 'invest', 'clients', 'online'))}.example"
 
 
 def _iban(rng: random.Random) -> str:
@@ -184,6 +218,15 @@ def _usable(world: World, regulator: str | None = None) -> list[Firm]:
     ]
 
 
+def _not_restricted(firms: list[Firm]) -> list[Firm]:
+    """Firms whose details may be altered.
+
+    The masking gateway knows a DFSA value only as recorded. A respelled name or an imitated domain
+    would not match it, so it would reach a model in clear. Only other registers' firms are altered.
+    """
+    return [firm for firm in firms if not firm.restricted]
+
+
 def _in_scope(firm: Firm, rng: random.Random) -> str:
     return rng.choice([code for code in firm.covers if code in ACTIVITY_WORDS])
 
@@ -235,7 +278,7 @@ def copied_identifiers(world: World, rng: random.Random, scenario_id: str) -> Sc
     if not alerts:
         return None
     alert = rng.choice(alerts)
-    firm = next((f for f in world.firms if f.name == alert.name), None)
+    firm = world.firm_named(alert.name)
     if firm is None or not firm.covers:
         return None
     contact = rng.choice(alert.contacts)
@@ -256,7 +299,7 @@ def copied_identifiers(world: World, rng: random.Random, scenario_id: str) -> Sc
 
 def imitated_domain(world: World, rng: random.Random, scenario_id: str) -> Scenario | None:
     """F2: a real firm's name, on a domain close to its official one."""
-    firms = _usable(world)
+    firms = _not_restricted(_usable(world))
     if not firms:
         return None
     firm = rng.choice(firms)
@@ -293,6 +336,7 @@ def outside_the_licence(world: World, rng: random.Random, scenario_id: str) -> S
     same_family = [code for code in outside if code.startswith("VA.") == (firm.regulator == "VARA")]
     code = rng.choice(same_family or outside)
     reading, slots, keep = _base(firm, code, rng, claim=rng.random() < 0.5, reference=False)
+    reading = replace(reading, not_covered={code: _SCOPE_RULE[firm.regulator]})
     slots["domain"] = firm.domain
     factors = ("F7",) if same_family else ("F6", "F7")
     return Scenario(
@@ -315,6 +359,7 @@ def approval_in_principle(world: World, rng: random.Random, scenario_id: str) ->
     firm = rng.choice(firms)
     assert firm.domain is not None
     reading, slots, keep = _base(firm, "VA.CUSTODY", rng, claim=True, reference=False)
+    reading = replace(reading, not_covered={"VA.CUSTODY": "SCOPE-VARA-01"})
     slots["domain"] = firm.domain
     return Scenario(
         scenario_id,
@@ -336,21 +381,14 @@ def third_party_payment(world: World, rng: random.Random, scenario_id: str) -> S
     assert firm.domain is not None
     reading, slots, keep = _base(firm, _in_scope(firm, rng), rng, claim=False, reference=False)
     iban = _iban(rng)
-    beneficiary = f"{rng.choice(('Amana', 'Noor', 'Rashid', 'Tareq'))} General Trading"
+    beneficiary = f"{_coined_firm(rng)[0]} General Trading"
     slots |= {"domain": firm.domain, "beneficiary": beneficiary, "iban": iban}
     return Scenario(
         scenario_id,
         "third_party_payment",
         ResultCode.CONFLICTS,
         ("F5",),
-        Reading(
-            activities=reading.activities,
-            relevant=reading.relevant,
-            firm=reading.firm,
-            regulator=reading.regulator,
-            reference=reading.reference,
-            payment={"iban": iban, "beneficiary": beneficiary},
-        ),
+        replace(reading, payment={"iban": iban, "beneficiary": beneficiary}),
         slots,
         (*keep, firm.domain, beneficiary, iban),
         firm.restricted,
@@ -461,7 +499,7 @@ def injected_instruction(world: World, rng: random.Random, scenario_id: str) -> 
         ("F2", "F15"),
         base.reading,
         {**base.slots, "aside": line},
-        base.keep,
+        (*base.keep, line),
         base.restricted,
     )
 
@@ -473,7 +511,7 @@ _SPELLINGS = (
     (r"oo", "u"),
     (r"ou", "u"),
     (r"ee", "i"),
-    (r"dh", "z"),
+    (r"dh", "d"),
     (r"kh", "k"),
     (r"sh", "ch"),
 )
@@ -482,7 +520,11 @@ _SPELLINGS = (
 def respelled(name: str) -> str | None:
     """The same name in another common transliteration, if it has one."""
     for pattern, replacement in _SPELLINGS:
-        changed = re.sub(pattern, replacement, name, count=1)
+
+        def spell(found: re.Match[str], to: str = replacement) -> str:
+            return to.capitalize() if found.group(0)[0].isupper() else to
+
+        changed = re.sub(pattern, spell, name, count=1, flags=re.IGNORECASE)
         if changed != name:
             return changed
     return None
@@ -490,7 +532,11 @@ def respelled(name: str) -> str | None:
 
 def variant_spelling(world: World, rng: random.Random, scenario_id: str) -> Scenario | None:
     """F12: a genuine firm, its name respelled, and its reference to confirm who it is."""
-    firms = [firm for firm in _usable(world) if firm.reference and respelled(firm.short_name)]
+    firms = [
+        firm
+        for firm in _not_restricted(_usable(world))
+        if firm.reference and respelled(firm.short_name)
+    ]
     if not firms:
         return None
     firm = rng.choice(firms)
@@ -556,11 +602,10 @@ def mixed_jurisdiction(world: World, rng: random.Random, scenario_id: str) -> Sc
         "mixed_jurisdiction",
         ResultCode.CONFLICTS,
         ("F6", "F7"),
-        Reading(
-            activities=reading.activities,
+        replace(
+            reading,
             relevant={"DFSA": "primary", "VARA": "possible", "CMA": "possible"},
-            firm=reading.firm,
-            regulator=reading.regulator,
+            not_covered={code: _SCOPE_RULE["DFSA"]},
         ),
         slots,
         (*keep, firm.domain, firm.address),
@@ -663,6 +708,14 @@ RECIPES: dict[ResultCode, tuple[Recipe, ...]] = {
 }
 
 
+#: The first letters of two results are the same, so each has a prefix of its own.
+_PREFIX = {
+    ResultCode.CONSISTENT: "CNS",
+    ResultCode.CONFLICTS: "CNF",
+    ResultCode.UNVERIFIED: "UNV",
+}
+
+
 def sample_scenarios(world: World, per_label: int, *, seed: int) -> list[Scenario]:
     """The same seed and the same records always give the same scenarios."""
     rng = random.Random(seed)
@@ -674,7 +727,7 @@ def sample_scenarios(world: World, per_label: int, *, seed: int) -> list[Scenari
         while made < per_label and misses < len(recipes):
             recipe = recipes[turn % len(recipes)]
             turn += 1
-            scenario = recipe(world, rng, f"{label.value[:3]}-{made + 1:04d}")
+            scenario = recipe(world, rng, f"{_PREFIX[label]}-{made + 1:04d}")
             if scenario is None:
                 misses += 1
                 continue

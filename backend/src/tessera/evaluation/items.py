@@ -69,7 +69,7 @@ class EvalItem(BaseModel):
         )
 
 
-def _write_atomic(path: Path, text: str) -> None:
+def write_atomic(path: Path, text: str) -> None:
     """A crash leaves the old file or the new one, never half of either."""
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_suffix(path.suffix + ".partial")
@@ -77,13 +77,23 @@ def _write_atomic(path: Path, text: str) -> None:
     os.replace(partial, path)
 
 
+def guard_restricted(path: Path, items: Iterable[EvalItem]) -> None:
+    """Anything holding a DFSA value may be written only under a ``restricted`` folder."""
+    if any(item.restricted for item in items) and "restricted" not in path.parts:
+        raise PermissionError(f"items holding DFSA values belong in datasets/restricted/: {path}")
+
+
 def write_items(path: Path, items: Iterable[EvalItem]) -> list[EvalItem]:
     """Write items as JSON lines. Refuses a restricted item outside a restricted folder."""
     listed = list(items)
-    if any(item.restricted for item in listed) and "restricted" not in path.parts:
-        raise PermissionError(f"items holding DFSA values belong in datasets/restricted/: {path}")
+    guard_restricted(path, listed)
+    known = [item.item_id for item in listed]
+    if len(set(known)) != len(known):
+        raise ValueError(
+            f"item IDs repeat: a run keeps one record per ID, so {path} would lose some"
+        )
     lines = (item.model_dump_json(exclude_defaults=False) for item in listed)
-    _write_atomic(path, "".join(f"{line}\n" for line in lines))
+    write_atomic(path, "".join(f"{line}\n" for line in lines))
     return listed
 
 

@@ -8,8 +8,6 @@ placeholder, like every other model call.
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
-from typing import Any, Protocol
 
 from tessera.evaluation.scenarios import Scenario
 
@@ -80,10 +78,6 @@ def render_template(scenario: Scenario, rng: random.Random) -> str:
     return text
 
 
-class Completion(Protocol):
-    async def complete(self, messages: list[dict[str, str]]) -> str: ...
-
-
 PARAPHRASE_SYSTEM = (
     "You rewrite clearly synthetic offer messages for a research dataset. The firms and details "
     "are invented or masked. Keep the meaning, and keep each listed string exactly as written, "
@@ -106,12 +100,6 @@ def paraphrase_messages(text: str, keep: tuple[str, ...]) -> list[dict[str, str]
     ]
 
 
-@dataclass(frozen=True)
-class Written:
-    text: str
-    origin: str
-
-
 def origin_mix(total: int, *, seed: int) -> list[str]:
     """About 30% templates, 50% paraphrases and 20% written by people, in a shuffled order."""
     human = round(total * 0.2)
@@ -122,11 +110,12 @@ def origin_mix(total: int, *, seed: int) -> list[str]:
     return origins
 
 
-def writing_brief(scenario: Scenario) -> dict[str, Any]:
+def writing_brief(scenario: Scenario) -> dict[str, str]:
     """What a person needs in order to write the message. It holds no label."""
     return {
         "scenario_id": scenario.scenario_id,
-        "must_appear_exactly": list(scenario.keep),
+        "offer_about": scenario.slots.get("activity", ""),
+        "must_appear_exactly": " | ".join(scenario.keep),
         "tone": scenario.tone,
         "text": "",
     }

@@ -9,6 +9,7 @@ overruled. Items built from DFSA facts are marked restricted.
 from __future__ import annotations
 
 import random
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -17,7 +18,7 @@ from tessera.agents.crew import CrewStack
 from tessera.baseline.rules_only import Reading
 from tessera.evaluation.firms import Firm, Listed, World
 from tessera.evaluation.items import EvalItem, Level
-from tessera.evaluation.labelling import policy_label
+from tessera.evaluation.labelling import policy_label, reasons_of
 from tessera.knowledge import ActivityTaxonomy
 from tessera.protocol.common import ResultCode
 
@@ -66,6 +67,7 @@ def _card_for_firm(
     *,
     domain: str | None,
     name: str | None = None,
+    outside: str | None = None,
 ) -> Card:
     used = name or firm.name
     words = _activity(taxonomy, code)
@@ -78,6 +80,7 @@ def _card_for_firm(
             firm=used,
             regulator=(firm.regulator, firm.regulator),
             reference=firm.reference,
+            not_covered={code: outside} if outside else {},
         ),
         name=used,
         domain=domain,
@@ -88,15 +91,11 @@ def _card_for_firm(
     )
 
 
-def _firm_named(world: World, name: str | None) -> Firm | None:
-    return next((firm for firm in world.firms if firm.name == name), None)
-
-
 def impersonated(world: World, taxonomy: ActivityTaxonomy) -> list[Card]:
     """E1 and E2: firms named in impersonation alerts, with the alert's contact, then their own."""
     cards: list[Card] = []
     for alert in world.alerts("impersonated_authorised_firm"):
-        firm = _firm_named(world, alert.name)
+        firm = world.firm_named(alert.name)
         if firm is None or not firm.covers:
             continue
         code = firm.covers[0]
@@ -179,7 +178,15 @@ def licensed_vasps(world: World, taxonomy: ActivityTaxonomy) -> list[Card]:
 def ipa_holders(world: World, taxonomy: ActivityTaxonomy) -> list[Card]:
     """E6: In-Principle Approval holders offering services."""
     return [
-        _card_for_firm(firm, "E6", ResultCode.CONFLICTS, "VA.CUSTODY", taxonomy, domain=firm.domain)
+        _card_for_firm(
+            firm,
+            "E6",
+            ResultCode.CONFLICTS,
+            "VA.CUSTODY",
+            taxonomy,
+            domain=firm.domain,
+            outside="SCOPE-VARA-01",
+        )
         for firm in world.of("VARA")
         if firm.status == "ipa"
     ]
@@ -197,11 +204,19 @@ def licensed_cma(world: World, taxonomy: ActivityTaxonomy) -> list[Card]:
 
 
 def category_five_fx(world: World, taxonomy: ActivityTaxonomy) -> list[Card]:
-    """E8: CMA firms not licensed for FX or derivatives, offering them."""
+    """E8: CMA Category 5 firms offering FX or derivatives, which that category does not allow."""
     return [
-        _card_for_firm(firm, "E8", ResultCode.CONFLICTS, _FX, taxonomy, domain=firm.domain)
+        _card_for_firm(
+            firm,
+            "E8",
+            ResultCode.CONFLICTS,
+            _FX,
+            taxonomy,
+            domain=firm.domain,
+            outside="SCOPE-CMA-01",
+        )
         for firm in world.of("CMA")
-        if firm.status == "active" and firm.domain and _FX not in firm.covers
+        if firm.status == "active" and firm.domain and re.search(r"\b5\b", firm.category)
     ]
 
 
@@ -238,7 +253,10 @@ def near_misses(world: World, taxonomy: ActivityTaxonomy, *, seed: int) -> list[
     rng = random.Random(seed)
     cards: list[Card] = []
     for firm in world.firms:
-        if firm.status != "active" or not firm.covers or len(firm.short_name) < 8:
+        # An altered DFSA name would not be masked, so those firms are left out.
+        if firm.restricted or firm.status != "active" or not firm.covers:
+            continue
+        if len(firm.short_name) < 8:
             continue
         at = rng.randrange(2, len(firm.short_name) - 2)
         changed = (
@@ -300,24 +318,19 @@ def build_entity_items(
     disputed: list[str] = []
     for index, card in enumerate(cards, start=1):
         item_id = f"E-{index:04d}"
-        label = policy_label(stack, f"label-{item_id}", card.text(), card.reading, today=today)
-        derived = label.decision.result
+        decision = policy_label(stack, f"label-{item_id}", card.text(), card.reading, today=today)
+        derived = decision.result
         if card.label is not None and derived is not card.label:
             expected = card.label.value
             disputed.append(f"{item_id} {card.stratum}: {expected} expected, not {derived.value}")
             continue
-        reasons = (
-            label.decision.hard_conflict_ids
-            if derived is ResultCode.CONFLICTS
-            else label.decision.unverified_reasons
-        )
         items.append(
             EvalItem(
                 item_id=item_id,
                 level=Level.ENTITY,
                 text=card.text(),
                 gold_label=derived,
-                gold_reasons=reasons,
+                gold_reasons=reasons_of(decision),
                 gold_relevant=tuple(sorted(card.reading.relevant)),
                 stratum=card.stratum,
                 origin="entity_card",

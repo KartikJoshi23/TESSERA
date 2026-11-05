@@ -13,12 +13,19 @@ from tessera.governance.policies import load_sources_policy
 from tessera.llm.client import CachingTransport, RateLimiter, ResilientTransport
 from tessera.llm.config import ModelsPolicy
 from tessera.llm.transport import HttpChatTransport
-from tessera.llm.types import ChatTransport
+from tessera.llm.types import ChatTransport, PermanentLLMError
 
 MISSING_KEY = (
     "NVIDIA_API_KEY is not set. Create a free key at build.nvidia.com and add this line to the "
     ".env file at the repository root: NVIDIA_API_KEY=<your key>"
 )
+
+
+class NoModelTransport:
+    """For work that needs no model. Reaching this is a bug, and it says so."""
+
+    async def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
+        raise PermanentLLMError("no model is configured")
 
 
 def build_live_transport(

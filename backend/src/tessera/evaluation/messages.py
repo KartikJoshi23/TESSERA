@@ -10,13 +10,14 @@ from datetime import date
 from tessera.agents.crew import CrewStack
 from tessera.evaluation.firms import World
 from tessera.evaluation.items import EvalItem, Level
-from tessera.evaluation.labelling import policy_label
+from tessera.evaluation.labelling import policy_label, reasons_of
 from tessera.evaluation.scenarios import GENERATOR, Scenario
 from tessera.evaluation.validators import check_message
 from tessera.evaluation.writing import origin_mix, paraphrase_messages, render_template
-from tessera.protocol.common import ResultCode
+from tessera.llm.types import LLMError
 
 PARAPHRASE_MAX_TOKENS = 500
+MAX_PARAPHRASE_FAILURES = 3
 
 
 @dataclass(frozen=True)
@@ -26,12 +27,6 @@ class MessageSet:
     for_people: tuple[Scenario, ...]
     #: Every item dropped, with its reasons. Nothing is dropped silently.
     dropped: tuple[str, ...]
-
-
-def _reasons(
-    stack_result: ResultCode, conflicts: tuple[str, ...], reasons: tuple[str, ...]
-) -> tuple[str, ...]:
-    return conflicts if stack_result is ResultCode.CONFLICTS else reasons
 
 
 def to_item(
@@ -45,8 +40,8 @@ def to_item(
 ) -> tuple[EvalItem | None, list[str]]:
     """Check one message, and give it the policy's label."""
     item_id = f"M-{scenario.scenario_id}"
-    label = policy_label(stack, f"label-{item_id}", text, scenario.reading, today=today)
-    derived = label.decision.result
+    decision = policy_label(stack, f"label-{item_id}", text, scenario.reading, today=today)
+    derived = decision.result
     problems = check_message(text, scenario, world, derived)
     if problems:
         return None, problems
@@ -55,9 +50,7 @@ def to_item(
         level=Level.MESSAGE,
         text=text,
         gold_label=derived,
-        gold_reasons=_reasons(
-            derived, label.decision.hard_conflict_ids, label.decision.unverified_reasons
-        ),
+        gold_reasons=reasons_of(decision),
         gold_relevant=tuple(sorted(scenario.reading.relevant)),
         contacts=tuple(
             scenario.slots[slot] for slot in ("domain", "whatsapp") if slot in scenario.slots
@@ -103,6 +96,8 @@ async def build_message_items(
     items: list[EvalItem] = []
     later: list[Scenario] = []
     dropped: list[str] = []
+    seen: set[str] = set()
+    failures = 0
     for scenario, origin in zip(scenarios, origins, strict=True):
         if origin == "human" and people:
             later.append(scenario)
@@ -110,8 +105,23 @@ async def build_message_items(
         text = render_template(scenario, rng)
         final_origin = "template"
         if origin == "paraphrase" and use_model:
-            text = await paraphrase(stack, scenario, text)
+            try:
+                text = await paraphrase(stack, scenario, text)
+            except LLMError as exc:
+                # What is built so far has cost requests, so a failure must not lose it.
+                dropped.append(f"{scenario.scenario_id}: paraphrase failed ({type(exc).__name__})")
+                failures += 1
+                if failures >= MAX_PARAPHRASE_FAILURES:
+                    dropped.append("stopped: the paraphrase model keeps failing")
+                    break
+                continue
+            failures = 0
             final_origin = "paraphrase"
+        same = " ".join(text.casefold().split())
+        if not same or same in seen:
+            dropped.append(f"{scenario.scenario_id} ({scenario.recipe}): empty or repeated text")
+            continue
+        seen.add(same)
         item, problems = to_item(scenario, text, final_origin, stack, world, today=today)
         if item is None:
             dropped.append(f"{scenario.scenario_id} ({scenario.recipe}): {'; '.join(problems)}")
