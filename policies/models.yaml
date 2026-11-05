@@ -7,9 +7,11 @@ provider:
   base_url: https://integrate.api.nvidia.com/v1
   api_key_env: NVIDIA_API_KEY
 
-# The free tier allows about 40 requests per minute per model. We stay below that, with one key.
+# Measured on 2026-11-05 with no retries: about 8 requests a minute got through, whatever the prompt
+# size (90 to 14,000 tokens), after a short burst. The published figure of about 40 did not hold for
+# this key. We pace just below what was measured, with one key, so requests are not wasted on 429s.
 rate_limit:
-  requests_per_minute: 35
+  requests_per_minute: 7.5
   max_concurrent: 4
   max_attempts: 8
   base_backoff_seconds: 2

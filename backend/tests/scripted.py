@@ -6,7 +6,10 @@ never from hard-coded strings. Replies that depend on earlier results are functi
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import json
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 from tessera.llm.testing import json_reply, tool_reply
@@ -30,6 +33,16 @@ _ROLES = {
     "# Your role: Reconciler": "REC",
     "# Your role: Verifier": "VER",
 }
+
+
+def in_loop(test: Callable[..., Coroutine[Any, Any, None]]) -> Callable[..., None]:
+    """Run an async test. The suite uses no plugin for this, so nothing extra is installed."""
+
+    @functools.wraps(test)
+    def run(*args: Any, **kwargs: Any) -> None:
+        asyncio.run(test(*args, **kwargs))
+
+    return run
 
 
 def agent_of(payload: dict[str, Any]) -> str:

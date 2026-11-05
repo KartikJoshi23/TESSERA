@@ -58,7 +58,7 @@
    - Ablations switch off sharing, challenges and the Verifier one at a time.
    - Work from 2025–26 finds that single agents often match multi-agent systems at equal compute. A tie is a valid, publishable outcome, and the design is built to detect a tie, not to hide one.
 4. **Zero budget.**
-   - All models run on NVIDIA's free API catalog, which uses the OpenAI request format and is rate-limited to about 40 requests per minute per model.
+   - All models run on NVIDIA's free API catalog, which uses the OpenAI request format. Its stated limit is about 40 requests per minute, but about 8 per minute were measured on this key (§11.5).
    - The whole stack is open source, everything runs on this machine, and CI uses free GitHub Actions on the public repository.
    - Because the models are open-weight, anyone can repeat the experiments at no cost.
 5. **Legal design.**
@@ -368,8 +368,9 @@ Tools are kept to the ones that need a model's judgement, because each call cost
   - Arguments are validated before they run. An error goes back to the model as the tool's result, so it can correct itself.
   - A regulator turn that produces no evidence from that regulator's sources is recorded as a coverage gap, so a skipped lookup cannot pass unnoticed.
 - **Rate limits and throughput.**
-  - The free tier allows about 40 requests per minute per model. Per-model limits are not published; the build.nvidia.com header shows yours.
-  - One shared rate limiter runs at 35 requests per minute, with exponential backoff on HTTP 429 or 5xx errors. Runs are resumable.
+  - The free tier is said to allow about 40 requests per minute, and per-model limits are not published. **Measured on 5 Nov 2026 with no retries, about 8 requests a minute got through on this key, whatever the prompt size** (90 to 14,000 tokens), after a short burst of about 7.
+  - One shared rate limiter runs at 7.5 requests per minute, with exponential backoff on HTTP 429 or 5xx errors. Pacing above the real limit wastes requests on retries: at 35 per minute the run achieved only 4.5.
+  - Runs are resumable, and the harness can run several cases at once under the same limiter, because the limit is on requests and a crew spends most of a case waiting for one reply at a time.
   - **One key only.** No key rotation or extra accounts to get around limits. If throughput becomes the bottleneck, request a limit increase through NVIDIA's developer forum, but do not plan on one: forum replies point paying users to their own deployments, so the request budget must fit the free limit.
 - **Model identity.**
   - Record exact model IDs and dates.
@@ -1077,8 +1078,15 @@ Money is not the constraint; the rate limit is. The budget is counted in model r
 | Entity-level test set: ~225 × ~92 | ≈ 20.7K |
 | **Total** | **≈ 95K** |
 
-- **Run time:** at 35 requests per minute this is about **45 hours**, run unattended over several nights in resumable chunks.
-- **Overheads:** development and the pilot add 20–30%. The pilot (20 items × the full run plan) is about 4.4K requests, roughly 2 hours.
+- **Run time (first estimate):** at 35 requests per minute this would have been about 45 hours.
+- **Overheads:** development and the pilot add 20–30%. The pilot (20 items × the full run plan) is about 4.4K requests.
+
+**Measured on 5 Nov 2026:**
+
+- The real limit is about 8 requests a minute, so the harness paces at 7.5, or about 10,800 a day.
+- CREW-FULL used 17.6 requests a case over 25 fictional cases, and SA-BASE about 4.5. Both are below the estimates above. The other conditions are measured by the pilot.
+- With those figures, a full run is about 100 requests per entity item and about 178 per message item, or **about 82K requests: about 7.6 days of continuous running, or about 18 nights of 10 hours.** The harness stops and resumes at any point, so this can be split as needed.
+- Replaced by final figures after the pilot.
 - **The optional capability arm** uses a smaller model with its own per-model limit, so it can run in parallel: about 31K requests, or about 15 hours.
 
 **If the free limits turn out lower** than expected, the fallback order is fixed in advance:
@@ -1221,7 +1229,7 @@ All components are free and open source. Versions are pinned in lock files.
   - The key `NVIDIA_API_KEY` lives in the local `.env`. CI never needs it, and the commit guard blocks keys in the `nvapi-…` format.
 - **Allowed hosts:** a network allowlist in `policies/sources.yaml` lets the LLM client reach only the configured provider host. Regulator domains are always blocked.
 - **Rate limiter:**
-  - an async token bucket at 35 requests per minute, shared across all agents in a run;
+  - an async pacing limiter at 7.5 requests per minute (measured, §11.5), shared across all agents in a run;
   - exponential backoff with jitter on HTTP 429 and 5xx errors;
   - a cap on concurrent requests;
   - every request is logged with its latency.
@@ -1290,11 +1298,12 @@ MultiAgent-Orchestration/              (local folder; GitHub: KartikJoshi23/TESS
 │   │   ├── reporting/                 final result and the report (output contract)
 │   │   ├── api/                       FastAPI app, SSE stream, case service
 │   │   ├── baseline/                  RULES-ONLY and the single-agent conditions
+│   │   ├── evaluation/                datasets, labels, review, harness, metrics, statistics
 │   │   ├── experiment.py              opens and runs any condition the same way
 │   └── tests/                         unit and governance tests; fictional fixtures only
 ├── eval/
 │   ├── smoke/                         fictional world and 25-case smoke set (committed)
-│   └── …                              (Part 6) synth, gold, harness, metrics, stats, configs, reports
+│   └── plan.yaml                      the registered run plan (Part 6)
 ├── frontend/                          (Part 5) Next.js app
 └── runs/                              experiment outputs and event logs (git-ignored)
 ```
@@ -1435,7 +1444,7 @@ Each part ends with a short report covering what was built, tests run, open issu
 | **4. Baselines** ✅ | RULES-ONLY, SA-BASE, SA-VER, SA-SC5, SA-MAX (optional SA-LARGER), on the shared runner; fairness-contract checks; comparable logging | Config-diff test shows that only orchestration differs; all conditions run on the smoke set | Human-written synthetic messages | M |
 | **5. Frontend** ✅ | Design system; Intake; Orchestration Theater (live and replay); Result Dossier; Arena; Evaluation Lab (using fixtures until Part 6); Data & Governance | Playwright end-to-end tests; reducer replay tests; accessibility checks; demo mode verified clean of DFSA values | Review of the visual design | L |
 | **6. Datasets and evaluation harness, plus pilot** | Entity-level gold builder; synthetic generator, validators and review workflow; splits; rate-limited, resumable harness; metrics; statistics; RULES-ONLY difficulty probe; **pilot** (20 items × the full run plan, about 4.4K requests); measured requests and timing; **pre-registration frozen** | Annotation κ ≥ 0.8 (or the single-annotator fallback); pilot runs end to end | Annotation and adjudication; final freeze of snapshots | L |
-| **7. Experiments, analysis, paper artefacts** | Full runs (about 95K requests, about 45 hours in resumable overnight chunks); analysis notebooks; figures and tables; MAST failure analysis; draft write-up skeleton; release checklist | All pre-registered analyses reported, including null results | Review of results | M |
+| **7. Experiments, analysis, paper artefacts** | Full runs (about 82K requests, about a week of continuous running in resumable chunks, §11.5); analysis notebooks; figures and tables; MAST failure analysis; draft write-up skeleton; release checklist | All pre-registered analyses reported, including null results | Review of results | M |
 | **8. Extension: CBUAE and ADGM FSRA** | Full reading of the CBUAE and ADGM terms; ingest of the CBUAE PDF (© notice kept); FSRA facts and its 11 alerts from 2026; two new regulator agents; extended rule cards; re-run on a subset; report on how much the added coverage changes results; optional I-SCAN API | Coverage-gap results (U2) shrink as expected; no regressions | Hand-recording for the FSRA | M |
 
 ---
@@ -1772,4 +1781,11 @@ Each change keeps to the approved design, or moves it for the reason given.
 | F40 | 5 | A Verifier veto can come from its reading of the evidence with every gate passed, so the gate states the reason and the blackboard has a Verifier tab | The first design showed only gate lights, which were all green on a real veto |
 | F41 | 5 | `backend/tests/test_frontend_contract.py` compares the frontend's recorded case with what the crew emits today, and checks each event the reducer handles exists | The backend and the frontend live apart, and this stops them drifting |
 | F42 | 5 | Browser tests use the installed Edge on a developer's machine, and Playwright's Chromium in CI. Lint added with the Next.js rules | No extra download locally. Lint found ref use during render, which was replaced |
+| F43 | 6 | The free tier was measured at about 8 requests a minute, not 40, so the limiter paces at 7.5. The full run is about a week of continuous running, not 45 hours | At 35 a minute the crew run was stuck in retries and achieved 4.5. A no-retry probe showed the limit, and that it does not depend on prompt size |
+| F44 | 6 | The harness can run several cases at once under the shared limiter | The limit is on requests. A case spends most of its time waiting for one reply, so running cases side by side uses the allowance that would otherwise go unused |
+| F45 | 6 | How an entry matched, and what a payment analysis found, come from the tool's evidence, not a model's copy | Across every live run, the two most common gate failures were a model restating a tool's answer wrongly. Each lost a sound result, because the claim could not pass and the Reconciler kept it. The tool's answer is what the check compares with, so nothing is lost |
+| F46 | 6 | A blank offer claim is not posted. `SEC.PROMOTION` is defined as promoting another firm's products for a fee | A model listed every kind of claim with empty values. Another read a firm's own advertising as an activity outside its licence, which is the error that wrongly implicates a genuine firm |
+| F47 | 6 | The evaluation code is a package, `backend/src/tessera/evaluation/`, and `eval/` holds the plan file | It shares the typed models, tests and lint, and it needs none of its own tooling |
+| F48 | 6 | Generated messages avoid the taxonomy's keywords and exact firm names | The difficulty probe fired on the hand-written set: rules alone matched 21 of 25. On the first generated set they match 20 of 39, with macro-F1 0.35 |
+| F49 | 6 | Entity-level near misses (E11) take the label the record gives, and need not be "Could not verify" | A near-miss name with a copied reference number and an imitating domain is a real conflict, and the stratum only requires that it never passes as the firm |
 

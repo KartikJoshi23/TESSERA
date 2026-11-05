@@ -39,6 +39,20 @@ class Event(BaseModel):
     latency_ms: int | None = None
 
 
+def _event(row: tuple[Any, ...]) -> Event:
+    seq, case_id, ts, actor, kind, payload, usage, latency = row
+    return Event(
+        seq=seq,
+        case_id=case_id,
+        ts=datetime.fromisoformat(ts),
+        actor=actor,
+        type=kind,
+        payload=json.loads(payload),
+        usage=json.loads(usage) if usage else None,
+        latency_ms=latency,
+    )
+
+
 class EventStore:
     """One SQLite file per run. Use ``":memory:"`` in tests."""
 
@@ -78,19 +92,18 @@ class EventStore:
                 "FROM events WHERE case_id = ? AND seq > ? ORDER BY seq",
                 (case_id, after),
             ).fetchall()
-        return [
-            Event(
-                seq=seq,
-                case_id=cid,
-                ts=datetime.fromisoformat(ts),
-                actor=actor,
-                type=kind,
-                payload=json.loads(payload),
-                usage=json.loads(usage) if usage else None,
-                latency_ms=latency,
-            )
-            for seq, cid, ts, actor, kind, payload, usage, latency in rows
-        ]
+        return [_event(row) for row in rows]
+
+    def of_types(self, *types: str) -> list[Event]:
+        """Every event of these types, across all cases, without reading the rest of the log."""
+        marks = ", ".join("?" for _ in types)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT seq, case_id, ts, actor, type, payload, usage, latency_ms "
+                f"FROM events WHERE type IN ({marks}) ORDER BY seq",
+                types,
+            ).fetchall()
+        return [_event(row) for row in rows]
 
     def case_ids(self) -> list[str]:
         with self._lock:

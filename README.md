@@ -36,7 +36,7 @@ The full design is in [implementation-plan.md](implementation-plan.md).
 | 3 | Crew orchestration, reconciliation, Verifier, streaming API | ✅ Done |
 | 4 | Single-agent baselines and ablations | ✅ Done |
 | 5 | Frontend (Orchestration Theater) | ✅ Done |
-| 6 | Datasets, evaluation harness, pilot | Planned |
+| 6 | Datasets, evaluation harness, pilot | Built. The real pilot waits for hand-collected data |
 | 7 | Experiments and analysis | Planned |
 | 8 | CBUAE and ADGM FSRA | Planned |
 
@@ -112,6 +112,32 @@ uv run tessera-api --fiction --events ../runs/api/replay.sqlite
 | `npm test` | Unit tests of the event reducer, timeline, geometry and comparisons |
 | `npm run e2e` | Browser tests against the real API on fictional data. They call no model |
 | `npm run lint`, `npm run typecheck` | Static checks |
+
+## The evaluation
+
+The evaluation lives in `backend/src/tessera/evaluation/`, and `eval/plan.yaml` holds what gets run.
+From `backend/`, `--fiction` runs the whole pipeline on the fictional world, with no real data:
+
+```bash
+uv run tessera-eval messages --fiction --per-label 60 --out ../runs/eval/messages
+uv run tessera-eval probe --fiction --items ../runs/eval/messages/dev/items.jsonl
+```
+
+| Command | What it does |
+|---|---|
+| `tessera-eval messages` | Builds labelled synthetic offers from the records. `--paraphrase` rewords half with a model of another family, and `--people` leaves a share to be written by hand |
+| `tessera-eval entities` | Builds the entity-level cards, strata E1 to E11, and lists any the policy disputes |
+| `tessera-eval sheet`, `agreement` | Exports a blind labelling sheet, and measures agreement between two filled sheets |
+| `tessera-eval probe` | Shows how far plain rules get, which says whether the messages are too easy |
+| `tessera-eval leakage` | Looks for record names in prompts and rule cards |
+| `tessera-eval run` | Runs the plan. It stops and resumes at any point. `--parallel`, `--hours` and `--max-requests` control a session |
+| `tessera-eval report` | Scores a run. Real-record and synthetic results stay apart |
+| `tessera-eval power` | Estimates how likely a true difference is to be found |
+| `tessera-eval freeze` | Records a finished set's hash |
+
+A run's records hold no gold labels. Labels are joined only when a run is scored. At the free tier's
+real rate of about 8 requests a minute, a full run takes about a week of continuous running. See
+[docs/pre-registration.md](docs/pre-registration.md).
 
 ## Modes
 

@@ -60,7 +60,7 @@ activities:
     dfsa_terms: [advising]
   - code: SEC.PROMOTION
     group: capital_markets
-    label: Introduction or promotion
+    label: Introducing clients to another firm, or promoting another firm's products, for a fee (not a firm advertising its own services)
     keywords: [introducing broker, referral, promotion, affiliate]
     dfsa_terms: [arranging]
   - code: FUND.MGMT

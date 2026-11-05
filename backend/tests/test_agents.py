@@ -342,6 +342,35 @@ def test_an_invented_evidence_id_is_kept_and_flagged(harness):
     assert finding.unknown_evidence_ids == ("E-feedfacefeedface",)
 
 
+def test_a_register_match_states_how_the_tool_matched_it(harness):
+    """The live run: a model called a reference-number match "exact", and failed gate G2 twice."""
+    setup = harness(text_of("S09"))
+    looked_up = setup.env.belt.execute(
+        "dfsa_facts_lookup",
+        json.dumps({"frn": setup.board.gateway.mask(FRN)}),
+        allowed=("dfsa_facts_lookup",),
+        actor=AgentId.DFSA,
+    )
+    match = json.loads(looked_up[0])["register_matches"][0]
+    assert match["match_type"] == "reference"
+    setup.transport.extend(
+        json_reply(
+            {
+                "relevance": {"status": "primary"},
+                "register_matches": [
+                    {
+                        "evidence_id": match["evidence_id"],
+                        "match_type": "exact",
+                        "status": "active",
+                    }
+                ],
+            }
+        )
+    )
+    setup.turn(AgentId.DFSA)
+    assert setup.board.live_findings("register_match")[0].assertion.match_type == "reference"
+
+
 def test_skipping_every_lookup_is_recorded_as_a_coverage_gap(harness):
     setup = harness(text_of("S10"), json_reply({"relevance": {"status": "primary"}}))
     setup.turn(AgentId.CMA)
@@ -690,6 +719,13 @@ def test_a_payment_item_that_says_nothing_is_not_a_finding(harness):
 
 def test_payment_details_become_a_finding(harness):
     setup = harness(text_of("S17"))
+    looked_up = setup.env.belt.execute(
+        "cma_register_lookup",
+        json.dumps({"name": "Falcon Ridge Securities L.L.C."}),
+        allowed=("cma_register_lookup",),
+        actor=AgentId.CMA,
+    )
+    entry = json.loads(looked_up[0])["matches"][0]["evidence_id"]
 
     def final(payload):
         analysis = tool_results(payload)[0]
@@ -697,7 +733,7 @@ def test_payment_details_become_a_finding(harness):
             {
                 "contacts": assessments(setup.board, "matches_official"),
                 "payment": {
-                    "beneficiary_matches": False,
+                    "beneficiary_matches": True,  # the tool found otherwise, and the tool wins
                     "iban_country": "AE",
                     "evidence_ids": [analysis["evidence_id"]],
                     "rationale": "The beneficiary differs from the register.",
@@ -709,7 +745,11 @@ def test_payment_details_become_a_finding(harness):
         tool_reply(
             (
                 "analyse_payment",
-                {"iban": "AE07 0331 2345 6789 0123 456", "beneficiary": "XYZ General Trading"},
+                {
+                    "iban": "AE07 0331 2345 6789 0123 456",
+                    "beneficiary": "XYZ General Trading",
+                    "entity_evidence_id": entry,
+                },
             )
         ),
         final,
@@ -717,6 +757,40 @@ def test_payment_details_become_a_finding(harness):
     setup.turn(AgentId.CLN)
     payment = setup.board.live_findings("payment_assessment")[0]
     assert payment.assertion.beneficiary_matches is False and payment.evidence_ids
+
+
+def test_a_payment_finding_states_what_the_tool_found_not_what_the_model_read(harness):
+    """The live run: with no entry to compare, a model read "no match" as a mismatch (S13).
+
+    That finding failed gate G2 twice, and cost a case whose hard conflicts were sound.
+    """
+    setup = harness(text_of("S17"))
+
+    def final(payload):
+        analysis = tool_results(payload)[0]
+        return json_reply(
+            {
+                "contacts": assessments(setup.board, "matches_official"),
+                "payment": {
+                    "beneficiary_matches": False,
+                    "evidence_ids": [analysis["evidence_id"]],
+                    "rationale": "The beneficiary matches nothing.",
+                },
+            }
+        )
+
+    setup.transport.extend(tool_reply(("analyse_payment", {"beneficiary": "XYZ Trading"})), final)
+    setup.turn(AgentId.CLN)
+    assert setup.board.live_findings("payment_assessment") == []
+
+
+def test_a_blank_offer_claim_is_not_a_finding(harness):
+    """The live run: a model listed every kind of claim, with empty values for most."""
+    setup = harness(text_of("S17"))
+    claim = {"kind": "address", "value": " ", "quote": ""}
+    setup.transport.extend(json_reply(jurisdiction_output(claims=[claim])))
+    setup.turn(AgentId.JUR)
+    assert setup.board.live_findings("offer_claim") == []
 
 
 # ------------------------------------------------------------------- Reconciler

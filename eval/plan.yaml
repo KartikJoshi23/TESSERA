@@ -1,0 +1,43 @@
+# The registered run plan (implementation-plan.md §11.4 and §11.5, docs/pre-registration.md).
+# Every record carries a hash of this file, so a change after the freeze is visible.
+version: 1
+
+# Each once at temperature 0, on both test sets. SA-LARGER is optional and runs separately.
+primary:
+  - RULES-ONLY
+  - SA-BASE
+  - SA-VER
+  - SA-SC5
+  - SA-MAX
+  - CREW-SILO
+  - CREW-SHARE
+  - CREW-FULL
+  - CREW-NV
+
+# Message level only. SA-SC5's five samples are the stability runs of SA-BASE.
+stability:
+  level: message
+  temperature: 0.7
+  runs:
+    SA-VER: 3
+    CREW-FULL: 3
+  share: 1.0
+
+# H1 and H2: the primary comparison. CREW-FULL against the mandatory baseline.
+registered:
+  - {name: H1 false reassurance, first: CREW-FULL, second: SA-BASE, metric: false_reassurance}
+  - {name: H2 usefulness, first: CREW-FULL, second: SA-BASE, metric: macro_f1}
+
+# H3 and H4: what accounts for any difference, and whether it survives equal compute.
+secondary:
+  - {name: sharing, first: CREW-SHARE, second: CREW-SILO, metric: false_reassurance}
+  - {name: sharing usefulness, first: CREW-SHARE, second: CREW-SILO, metric: macro_f1}
+  - {name: challenges, first: CREW-FULL, second: CREW-SHARE, metric: false_reassurance}
+  - {name: challenges usefulness, first: CREW-FULL, second: CREW-SHARE, metric: macro_f1}
+  - {name: verifier, first: CREW-FULL, second: CREW-NV, metric: false_reassurance}
+  - {name: against voting, first: CREW-FULL, second: SA-SC5, metric: false_reassurance}
+  - {name: against more thinking, first: CREW-FULL, second: SA-MAX, metric: false_reassurance}
+  - {name: coordination, first: CREW-FULL, second: SA-VER, metric: false_reassurance}
+
+# H2 holds if the crew's macro-F1 is no more than this far below the baseline's.
+non_inferiority_margin: 0.02

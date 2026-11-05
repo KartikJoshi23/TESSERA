@@ -5,12 +5,31 @@ from __future__ import annotations
 from typing import Any
 
 from tessera.agents.base import Agent, AgentEnv, Task
-from tessera.agents.schemas import CloneCheckOutput
+from tessera.agents.schemas import CloneCheckOutput, PaymentItem
 from tessera.blackboard.views import clone_view
 from tessera.llm.prompts import render_rule_cards
 from tessera.protocol.claims import ContactAssessment, PaymentAssessment
 from tessera.protocol.common import AgentId, clip_words
 from tessera.protocol.contacts import ContactRole
+
+
+def _as_the_tool_found(env: AgentEnv, payment: PaymentItem | None) -> PaymentItem | None:
+    """The payment tool's own answer, in place of a model's copy of it.
+
+    A model reading "no match" from the tool can report a mismatch when there was no entry to
+    compare with. Nothing here depends on its reading, so the two cannot disagree.
+    """
+    if payment is None:
+        return None
+    for evidence_id in payment.evidence_ids:
+        record = env.board.evidence.get(evidence_id)
+        if record is not None and record.minted_by == "analyse_payment":
+            found = {
+                "beneficiary_matches": record.fields.get("beneficiary_matches"),
+                "wallet_requested": bool(record.fields.get("wallet_requested")),
+            }
+            return payment.model_copy(update=found)
+    return payment
 
 
 class CloneCheckAgent(Agent):
@@ -72,7 +91,7 @@ class CloneCheckAgent(Agent):
                 round=r,
             )
             posted.append(finding.finding_id)
-        payment = output.payment
+        payment = _as_the_tool_found(env, output.payment)
         says_something = payment is not None and (
             payment.beneficiary_matches is not None
             or payment.wallet_requested

@@ -137,20 +137,19 @@ class CaseService:
         return trace_bundle(self.board(case_id), self.events(case_id))
 
     def cases(self) -> list[dict[str, Any]]:
-        listed = []
-        for case_id in self.stack.store.case_ids():
-            if SAMPLE_MARK in case_id:
-                continue
-            board = self.board(case_id)
-            listed.append(
-                {
-                    "case_id": case_id,
-                    "condition": board.case.condition.value if board.case else None,
-                    "result": board.final.result.value if board.final else None,
-                    "running": case_id in self._running,
-                }
-            )
-        return listed
+        """Every case, from its first and last events, so a long log stays quick to list."""
+        store = self.stack.store
+        results = {event.case_id: event.payload for event in store.of_types("result.finalized")}
+        return [
+            {
+                "case_id": event.case_id,
+                "condition": event.payload["condition"],
+                "result": results.get(event.case_id, {}).get("result"),
+                "running": event.case_id in self._running,
+            }
+            for event in store.of_types("case.created")
+            if SAMPLE_MARK not in event.case_id
+        ]
 
     def preview(self, text: str) -> dict[str, Any]:
         """What Intake shows as someone types. Nothing is stored, and no model is called."""

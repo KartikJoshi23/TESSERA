@@ -84,7 +84,10 @@ class JurisdictionAgent(Agent):
         for zone in output.zone_signals:
             post(ZoneSignal(zone=zone.zone, basis=zone.basis), env.quote_evidence(zone.quote))
         for claim in output.claims:
-            post(OfferClaim(kind=claim.kind, value=claim.value), env.quote_evidence(claim.quote))
+            if claim.value.strip():  # a blank value states nothing about the offer
+                post(
+                    OfferClaim(kind=claim.kind, value=claim.value), env.quote_evidence(claim.quote)
+                )
         if output.targets_uae_clients is not None:
             post(Targeting(targets_uae_clients=output.targets_uae_clients), [])
         for item in output.relevance:

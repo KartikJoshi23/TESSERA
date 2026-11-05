@@ -170,14 +170,19 @@ class RegulatorAgent(Agent):
 
     @staticmethod
     def _one_match_per_entry(board: Blackboard, items: list[RegisterItem]) -> list[RegisterItem]:
-        """One finding per register entry. Each lookup route mints evidence of its own."""
+        """One finding per register entry. Each lookup route mints evidence of its own.
+
+        How an entry matched is a tool's answer, so the tool's word stands in for a model's copy.
+        """
         best: dict[tuple[str, str], RegisterItem] = {}
         for item in items:
             record = board.evidence.get(item.evidence_id)
             key = (record.source_id, record.locator) if record else ("", item.evidence_id)
+            found = record.fields.get("match_type") if record else None
+            chosen = item.model_copy(update={"match_type": found}) if found in MATCH_RANK else item
             current = best.get(key)
-            if current is None or MATCH_RANK[item.match_type] < MATCH_RANK[current.match_type]:
-                best[key] = item
+            if current is None or MATCH_RANK[chosen.match_type] < MATCH_RANK[current.match_type]:
+                best[key] = chosen
         return list(best.values())
 
     def _records_consulted(self, env: AgentEnv) -> bool:
