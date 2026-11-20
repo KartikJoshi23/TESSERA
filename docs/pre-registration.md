@@ -57,8 +57,8 @@ Everything else broken down by factor is exploratory, and is labelled that way.
   as SA-BASE's.
 - **Reasoning setting:** on, the model's default, for every condition. On or off is the model's only
   control, so SA-MAX differs from SA-BASE only in its longer output allowance. SA-SC5 is the arm that
-  spends the extra compute in a different way. In every condition, a reply cut off at its output
-  limit is repaired with reasoning off.
+  spends the extra compute in a different way. In every condition, a reply that holds no answer, cut
+  off at its output limit or not, is repaired with reasoning off.
 - **A system that gives no result** is scored as "Could not verify", and failures are reported.
 - **Prompts:** the same number of revisions for both systems, at most 5 each, on development data
   only, logged in `backend/prompts/CHANGELOG.md`.
@@ -84,3 +84,4 @@ Each entry gives the date, what changed and why.
 | 2026-11-05 | The starting matrix's Unknown row no longer lists the DFSA and FSRA | A free-zone regulator now needs a sign of its zone (F63). Every covered register is still searched, so no check is lost. The change is in shared guidance, so both systems get it |
 | 2026-11-05 | New rule card SCOPE-CMA-03, for CMA scope in any category | The cards covered only Category 5 (F64). The card is shared, and it needs checking against the CMA export |
 | 2026-11-20 | Paraphrase model changed to `google/gemma-4-31b-it` | Mistral no longer finished a paraphrase, and the registered alternative was retired on 16 Nov 2026. Gemma is a different family from the model under test, as decision D6 requires, and the plan names it as an example. No system under test changes (ADR-0004) |
+| 2026-11-20 | A reply with no JSON object at all is repaired with reasoning off, cut off or not | One single-agent reply stopped after writing its analysis and no answer, and its repair with reasoning on did the same (F71). The runner is shared, so no condition is favoured |

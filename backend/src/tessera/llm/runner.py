@@ -28,7 +28,7 @@ from tessera.blackboard.board import Blackboard
 from tessera.errors import RequestBudgetExceeded
 from tessera.llm.client import GuardedLLM
 from tessera.llm.config import DecodingConfig, LimitsConfig
-from tessera.llm.jsonio import extract_json_object, strip_reasoning
+from tessera.llm.jsonio import NO_JSON, extract_json_object, strip_reasoning
 from tessera.llm.prompts import RenderedPrompt
 from tessera.llm.types import ChatResponse, LLMError, ToolCall, build_payload
 from tessera.protocol.common import AgentId
@@ -287,9 +287,13 @@ class AgentRunner:
                 result.output = output
                 return result
             cut_off = response.finish_reason == "length"
-            if cut_off:
-                # A model that spent its whole allowance reasoning would only do so again.
+            # A reply with no answer in it, cut off or not, came from reasoning that ended without
+            # one, and the same reasoning would only do so again. A reply whose answer breaks the
+            # schema keeps its reasoning, to work out what to correct.
+            unanswered = cut_off or problems == [NO_JSON]
+            if unanswered:
                 extra_body = _reasoning_off(extra_body)
+            if cut_off:
                 problems = [_CUT_OFF]
             if result.repairs >= self._limits.repair_attempts:
                 return self._fail(result, "invalid_output", "; ".join(problems))
@@ -297,7 +301,12 @@ class AgentRunner:
             self._board.record(
                 "agent.repair",
                 spec.agent_id,
-                {"round": round, "problems": problems[:3], "cut_off": cut_off},
+                {
+                    "round": round,
+                    "problems": problems[:3],
+                    "cut_off": cut_off,
+                    "reasoning_off": unanswered,
+                },
             )
             # Any tool calls here went unanswered, and a provider rejects those in a history.
             messages.append({"role": "assistant", "content": strip_reasoning(response.content)})

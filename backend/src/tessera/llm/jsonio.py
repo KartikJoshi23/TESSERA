@@ -15,6 +15,10 @@ _OPEN_THINK = re.compile(r"^.*?</think>", re.DOTALL | re.IGNORECASE)
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 
 
+#: A reply with no JSON object at all, as against one whose object breaks the schema.
+NO_JSON = "the reply holds no JSON object"
+
+
 def strip_reasoning(text: str) -> str:
     """Remove ``<think>`` blocks, including a block whose opening tag was cut off."""
     return _OPEN_THINK.sub("", _THINK.sub("", text)).strip()
@@ -28,7 +32,7 @@ def extract_json_object(text: str) -> dict[str, Any]:
         body = fenced.group(1).strip()
     start, end = body.find("{"), body.rfind("}")
     if start < 0 or end <= start:
-        raise ValueError("the reply holds no JSON object")
+        raise ValueError(NO_JSON)
     try:
         value = json.loads(body[start : end + 1])
     except json.JSONDecodeError as exc:

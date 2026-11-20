@@ -331,10 +331,22 @@ def test_a_reply_cut_off_at_its_limit_is_repaired_with_reasoning_off(harness):
     assert setup.board.store.of_types("agent.repair")[0].payload["cut_off"] is True
 
 
-def test_other_repairs_keep_reasoning_on(harness):
-    setup = harness(OFFER, chat_reply("not json"), json_reply({"answer": "done"}))
+def test_an_answer_that_breaks_the_schema_is_repaired_with_reasoning_on(harness):
+    setup = harness(OFFER, json_reply({"wrong": 1}), json_reply({"answer": "done"}))
     assert run_reasoning(setup).ok
     assert [reasoning_switch(p) for p in setup.transport.payloads] == [True, True]
+    assert setup.board.store.of_types("agent.repair")[0].payload["reasoning_off"] is False
+
+
+def test_a_reply_that_stopped_with_no_answer_is_repaired_with_reasoning_off(harness):
+    """The live run: the single agent wrote its analysis, twice, and never the JSON object."""
+    prose = chat_reply("Decision analysis: HC1 does not hold, nor does HC2.", finish_reason="stop")
+    setup = harness(OFFER, prose, json_reply({"answer": "done"}))
+    result = run_reasoning(setup)
+    assert result.ok and result.repairs == 1
+    assert [reasoning_switch(p) for p in setup.transport.payloads] == [True, False]
+    event = setup.board.store.of_types("agent.repair")[0].payload
+    assert event["reasoning_off"] is True and event["cut_off"] is False
 
 
 def test_a_cut_off_reply_on_a_model_with_no_switch_is_repaired_as_it_was(harness):
