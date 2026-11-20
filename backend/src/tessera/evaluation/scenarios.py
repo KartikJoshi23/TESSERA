@@ -618,7 +618,10 @@ def unknown_firm(world: World, rng: random.Random, scenario_id: str) -> Scenario
     name, domain = _coined_firm(rng)
     code = rng.choice(("VA.YIELD", "FUND.MGMT", "SEC.ADVICE"))
     words = rng.choice(ACTIVITY_WORDS[code])
-    relevant = {"VARA": "primary"} if code.startswith("VA.") else {"CMA": "primary"}
+    # No register settles relevance for a firm on none, so the matrix's Unknown row stands (F63).
+    relevant = (
+        {"VARA": "possible", "CMA": "possible"} if code.startswith("VA.") else {"CMA": "possible"}
+    )
     return Scenario(
         scenario_id,
         "unknown_firm",

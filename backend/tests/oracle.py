@@ -127,7 +127,7 @@ ORACLE: dict[str, Facts] = {
     ),
     "S20": Facts(
         (("VA.MGMT", "managed crypto portfolios"),),
-        {"VARA": "possible", "CMA": "possible", "DFSA": "possible"},
+        {"VARA": "possible", "CMA": "possible"},
         firm="Bluewave Horizon",
     ),
     "S21": Facts(

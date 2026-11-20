@@ -182,7 +182,7 @@ cases:
       Bluewave Horizon offers managed crypto portfolios. Learn more at bluewavehorizon.example.
     gold_label: UNVERIFIED
     gold_reasons: [U1]
-    gold_relevant: [VARA, CMA, DFSA]
+    gold_relevant: [VARA, CMA]
     factors: [F3]
   - id: S21
     channel: sms
