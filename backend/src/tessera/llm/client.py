@@ -58,8 +58,17 @@ class RateLimiter:
         self._next_slot = max(self._next_slot, self._clock() + seconds)
 
 
+#: Past the HTTP client's own timeouts, so those fire first and give their own reason.
+_DEADLINE_GRACE_SECONDS = 60
+
+
 class ResilientTransport:
-    """Applies the shared rate limit, caps concurrency and retries transient failures."""
+    """Applies the shared rate limit, caps concurrency and retries transient failures.
+
+    Every wait is bounded. A request that has not finished by its deadline is cut off and retried,
+    however slowly its bytes arrive, and a provider's request to wait is honoured only up to the
+    longest backoff. Either could otherwise stall a run for hours with nothing to show for it.
+    """
 
     def __init__(
         self,
@@ -70,6 +79,7 @@ class ResilientTransport:
         notify: Notify | None = None,
         sleep: Sleep = asyncio.sleep,
         rng: Callable[[], float] = random.random,
+        deadline: float | None = None,
     ) -> None:
         self._inner = inner
         self._limiter = limiter
@@ -78,10 +88,21 @@ class ResilientTransport:
         self._sleep = sleep
         self._rng = rng
         self._slots = asyncio.Semaphore(config.max_concurrent)
+        self._deadline = (
+            deadline
+            if deadline is not None
+            else config.request_timeout_seconds + _DEADLINE_GRACE_SECONDS
+        )
 
     def _backoff(self, attempt: int) -> float:
         ceiling = self._config.base_backoff_seconds * (2 ** (attempt - 1))
         return min(self._config.max_backoff_seconds, ceiling) * (0.5 + self._rng() / 2)
+
+    async def _within_deadline(self, payload: dict[str, Any]) -> dict[str, Any]:
+        try:
+            return await asyncio.wait_for(self._inner.chat(payload), self._deadline)
+        except TimeoutError as exc:
+            raise TransientLLMError(f"no reply within {self._deadline:g} seconds") from exc
 
     async def chat(self, payload: dict[str, Any]) -> dict[str, Any]:
         attempt = 0
@@ -90,11 +111,16 @@ class ResilientTransport:
             try:
                 async with self._slots:
                     await self._limiter.acquire()
-                    return await self._inner.chat(payload)
+                    return await self._within_deadline(payload)
             except RateLimited as exc:
-                delay = exc.retry_after or self._backoff(attempt)
+                asked = exc.retry_after
+                cap = self._config.max_backoff_seconds
+                delay = min(asked, cap) if asked else self._backoff(attempt)
                 self._limiter.penalize(delay)
-                self._notify("rate_limited", {"attempt": attempt, "delay_seconds": round(delay, 1)})
+                self._notify(
+                    "rate_limited",
+                    {"attempt": attempt, "delay_seconds": round(delay, 1), "asked_seconds": asked},
+                )
                 if attempt >= self._config.max_attempts:
                     raise
             except TransientLLMError as exc:

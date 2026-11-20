@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import random
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -129,11 +129,13 @@ async def build_message_items(
     seed: int,
     use_model: bool,
     people: bool,
+    echo: Callable[[str], None] = lambda _line: None,
 ) -> MessageSet:
     """Write and check every scenario.
 
     ``use_model`` off makes paraphrases into templates, for a dry run with no requests. ``people``
-    off does the same for the share people would write.
+    off does the same for the share people would write. ``echo`` hears of each scenario as it is
+    done, so a long run shows where it is.
     """
     rng = random.Random(seed)
     origins = origin_mix(len(scenarios), seed=seed)
@@ -148,11 +150,13 @@ async def build_message_items(
             continue
         text = render_template(scenario, rng)
         if origin == "paraphrase" and use_model:
+            echo(f"{scenario.scenario_id}: paraphrasing")
             try:
                 item, problems = await _reworded(scenario, text, stack, world, seen, today=today)
             except LLMError as exc:
                 # What is built so far has cost requests, so a failure must not lose it.
                 dropped.append(f"{scenario.scenario_id}: paraphrase failed ({type(exc).__name__})")
+                echo(f"{scenario.scenario_id}: paraphrase failed")
                 failures += 1
                 if failures >= MAX_PARAPHRASE_FAILURES:
                     dropped.append("stopped: the paraphrase model keeps failing")
@@ -163,8 +167,10 @@ async def build_message_items(
             item, problems = _accept(scenario, text, "template", stack, world, seen, today=today)
         if item is None:
             dropped.append(f"{scenario.scenario_id} ({scenario.recipe}): {'; '.join(problems)}")
+            echo(f"{scenario.scenario_id}: dropped")
         else:
             items.append(item)
+            echo(f"{scenario.scenario_id}: kept as {item.origin}")
     return MessageSet(tuple(items), tuple(later), tuple(dropped))
 
 

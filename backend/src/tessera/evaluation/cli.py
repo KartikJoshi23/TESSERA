@@ -167,6 +167,7 @@ async def _build_messages(args: argparse.Namespace) -> int:
             seed=args.seed,
             use_model=args.paraphrase,
             people=args.people,
+            echo=lambda line: print(line, flush=True),
         )
     finally:
         if http is not None:

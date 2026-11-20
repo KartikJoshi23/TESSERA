@@ -145,12 +145,53 @@ def test_transient_failures_are_retried_with_backoff():
 def test_retry_after_is_honoured_and_reported():
     events = []
     transport, _, time = resilient(
-        [RateLimited("slow down", retry_after=20), chat_reply("ok")],
+        [RateLimited("slow down", retry_after=5), chat_reply("ok")],
         notify=lambda kind, info: events.append((kind, info)),
     )
     asyncio.run(transport.chat({"model": "m"}))
-    assert 20 in time.sleeps
+    assert 5 in time.sleeps
     assert events[0][0] == "rate_limited"
+
+
+def test_a_very_long_retry_after_is_capped_at_the_longest_backoff():
+    """One header asking for an hour must not stall a run for an hour."""
+    events = []
+    transport, _, time = resilient(
+        [RateLimited("slow down", retry_after=3600), chat_reply("ok")],
+        notify=lambda kind, info: events.append(info),
+    )
+    asyncio.run(transport.chat({"model": "m"}))
+    assert 3600 not in time.sleeps and LIMITS.max_backoff_seconds in time.sleeps
+    assert events[0]["asked_seconds"] == 3600
+
+
+class HangsOnce:
+    """A provider that holds the first request open and never answers it."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def chat(self, payload):
+        self.calls += 1
+        if self.calls == 1:
+            await asyncio.Event().wait()
+        return chat_reply("ok")
+
+
+def test_a_request_that_never_finishes_is_cut_off_and_retried():
+    clock = FakeTime()
+    inner = HangsOnce()
+    limiter = RateLimiter(60, clock=clock.clock, sleep=clock.sleep)
+    transport = ResilientTransport(
+        inner, limiter, LIMITS, sleep=clock.sleep, rng=lambda: 1.0, deadline=0.05
+    )
+    result = asyncio.run(transport.chat({"model": "m"}))
+    assert result["choices"][0]["message"]["content"] == "ok" and inner.calls == 2
+
+
+def test_the_deadline_sits_past_the_http_timeout():
+    transport, _, _ = resilient([chat_reply("ok")])
+    assert transport._deadline > LIMITS.request_timeout_seconds
 
 
 def test_retries_stop_after_max_attempts():
