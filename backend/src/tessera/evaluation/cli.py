@@ -25,6 +25,17 @@ from tessera.devdata import FICTION_DATE, install_world
 from tessera.errors import PolicyError
 from tessera.evaluation.components import component_report
 from tessera.evaluation.entities import build_entity_items
+from tessera.evaluation.failures import (
+    SAMPLE_SIZE,
+    code_agreement,
+    failure_rows,
+    failures_of,
+    read_codes,
+    sample_failures,
+    summarize_codes,
+    write_failure_sheet,
+)
+from tessera.evaluation.figures import paper_figures, write_figures
 from tessera.evaluation.firms import load_world
 from tessera.evaluation.freezing import fingerprint, freeze_manifest, frozen_problems, pin_run
 from tessera.evaluation.harness import Harness, load_records
@@ -32,6 +43,7 @@ from tessera.evaluation.items import EvalItem, Split, content_hash, read_items, 
 from tessera.evaluation.leakage import scan
 from tessera.evaluation.messages import build_message_items, import_written
 from tessera.evaluation.metrics import summarize
+from tessera.evaluation.paper import paper_tables, write_tables
 from tessera.evaluation.plan import jobs_for, load_plan, plan_hash
 from tessera.evaluation.readiness import readiness
 from tessera.evaluation.report import evaluation_report, outcomes_by_condition, render_text
@@ -168,6 +180,74 @@ async def _build_messages(args: argparse.Namespace) -> int:
     for line in built.dropped:
         print(f"dropped: {line}")
     print(f"dropped {len(built.dropped)} of {len(scenarios)} scenarios")
+    return 0
+
+
+def _failures(args: argparse.Namespace) -> int:
+    """A sheet of one condition's failures, to code with MAST (§11.3)."""
+    chosen = _chosen(_load(args.items), args.split)
+    if chosen is None:
+        return 2
+    records = [r for r in load_records(args.run_dir) if r["condition"] == args.condition]
+    outcomes = outcomes_by_condition(chosen, records).get(args.condition, {})
+    if not outcomes:
+        print(f"tessera-eval: no results for {args.condition} on these items")
+        return 2
+    sample = sample_failures(outcomes, args.size, seed=args.seed)
+    wanted = {outcome.item_id for outcome in sample}
+    cases = {r["item_id"]: r.get("case_id") for r in records if r["run"] == 0}
+    log = args.run_dir / "events.sqlite"
+    events = {}
+    if log.is_file():
+        store = EventStore(log)
+        events = {i: store.read(case) for i, case in cases.items() if i in wanted and case}
+        store.close()
+    rows = failure_rows(sample, {item.item_id: item for item in chosen}, events, args.condition)
+    name = f"failures-{args.coder}.csv"
+    for restricted in (False, True):
+        part = [row for row in rows if row.item.restricted is restricted]
+        if part:
+            folder = restricted_home(args.out) if restricted else args.out
+            print(f"{len(part)} rows: {write_failure_sheet(part, folder / name)}")
+    wrong = len(failures_of(outcomes))
+    print(f"{args.condition}: {wrong} failures of {len(outcomes)} items, {len(sample)} to code")
+    return 0
+
+
+def _failure_codes(args: argparse.Namespace) -> int:
+    """Counts of each failure mode, and agreement between two coders if a second sheet is given."""
+    codes = read_codes(args.codes)
+    summary = summarize_codes(codes)
+    if args.second:
+        summary["agreement"] = code_agreement(codes, read_codes(args.second))
+    if args.out:
+        args.out.write_text(json.dumps(summary, indent=1), encoding="utf-8")
+    print(f"{summary['failures']} failures coded")
+    for key, category in summary["categories"].items():
+        print(f"  {key} {category['name']}: {category['count']}")
+    for code, mode in summary["modes"].items():
+        if mode["count"]:
+            print(f"    {code} {mode['name']}: {mode['count']}")
+    if agreement := summary.get("agreement"):
+        print(
+            f"agreement on {agreement['items']} items: pooled kappa "
+            f"{agreement['kappa_pooled']:.3f}, same codes {agreement['same_codes']:.0%}"
+        )
+        print(f"to discuss: {', '.join(agreement['to_discuss']) or 'none'}")
+    return 0
+
+
+def _paper(args: argparse.Namespace) -> int:
+    """The write-up's tables and figures, from a report written by ``report --out``."""
+    report = json.loads(args.report.read_text(encoding="utf-8"))
+    items = _load(args.items) if args.items else []
+    tables = paper_tables(report, items, fiction=args.fiction)
+    if not tables:
+        print("tessera-eval: the report holds no results to tabulate")
+        return 2
+    figures = paper_figures(report, fiction=args.fiction)
+    for path in [*write_tables(tables, args.out), *write_figures(figures, args.out)]:
+        print(path)
     return 0
 
 
@@ -312,19 +392,24 @@ async def _run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _chosen(items: list[EvalItem], split: str | None) -> list[EvalItem] | None:
+    """The items of one split. None when they span both and no split was chosen."""
+    if split == "all":
+        return items
+    if split:
+        return of_split(items, Split(split))
+    if len({item.split for item in items}) > 1:
+        print("tessera-eval: these items span dev and test, so choose one with --split")
+        return None
+    return items
+
+
 def _report(args: argparse.Namespace) -> int:
     root = load_settings().root
     plan = load_plan(root / "eval" / "plan.yaml")
-    items = _load(args.items)
-    if args.split == "all":
-        chosen = items
-    elif args.split:
-        chosen = of_split(items, Split(args.split))
-    elif len({item.split for item in items}) > 1:
-        print("tessera-eval: these items span dev and test, so choose one with --split")
+    chosen = _chosen(_load(args.items), args.split)
+    if chosen is None:
         return 2
-    else:
-        chosen = items
     report = evaluation_report(chosen, load_records(args.run_dir), plan)
     if args.out:
         args.out.write_text(json.dumps(report, indent=1), encoding="utf-8")
@@ -522,6 +607,27 @@ def build_parser() -> argparse.ArgumentParser:
     written.add_argument("--briefs", type=Path, required=True, help="the filled-in briefs.csv")
     written.add_argument("--out", type=Path, required=True)
 
+    failures = commands.add_parser("failures", help="a sheet of failures to code with MAST")
+    failures.add_argument("--items", type=Path, nargs="+", required=True)
+    failures.add_argument("--run-dir", type=Path, required=True)
+    failures.add_argument("--condition", default=SystemCondition.CREW_FULL.value)
+    failures.add_argument("--split", choices=["dev", "test", "all"])
+    failures.add_argument("--size", type=_at_least_one, default=SAMPLE_SIZE)
+    failures.add_argument("--coder", default="A", help="whose copy of the sheet this is")
+    failures.add_argument("--out", type=Path, required=True, help="a folder")
+    failures.add_argument("--seed", type=int, default=DEFAULT_SEED)
+
+    coded = commands.add_parser("failure-codes", help="count coded failure modes")
+    coded.add_argument("--codes", type=Path, required=True, help="a filled failures sheet")
+    coded.add_argument("--second", type=Path, help="a second coder's sheet, for agreement")
+    coded.add_argument("--out", type=Path, help="write the summary as JSON")
+
+    paper = commands.add_parser("paper", help="the write-up's tables and figures, from a report")
+    paper.add_argument("--report", type=Path, required=True, help="written by report --out")
+    paper.add_argument("--items", type=Path, nargs="+", help="for the datasets table")
+    paper.add_argument("--fiction", action="store_true", help="mark every table as fictional")
+    paper.add_argument("--out", type=Path, required=True, help="a folder")
+
     settled = commands.add_parser("settle", help="apply labels settled by discussion")
     settled.add_argument("--items", type=Path, required=True)
     settled.add_argument("--decisions", type=Path, required=True, help="item_id,label as CSV")
@@ -559,6 +665,12 @@ def main(argv: list[str] | None = None) -> int:
             return _written(args)
         if args.command == "settle":
             return _settle(args)
+        if args.command == "failures":
+            return _failures(args)
+        if args.command == "failure-codes":
+            return _failure_codes(args)
+        if args.command == "paper":
+            return _paper(args)
         return _freeze(args)
     except PolicyError as exc:
         print(f"tessera-eval: {exc}", file=sys.stderr)

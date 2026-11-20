@@ -131,6 +131,56 @@ uv run tessera-eval report --items ../datasets/message_level/test/items.jsonl ..
 Entity-level and message-level results are reported separately, and all of them are reported,
 whether a hypothesis held or not.
 
+## 12. Code the failures with MAST
+
+The crew's failures are coded with MAST, the multi-agent failure taxonomy of Cemri et al. (2025),
+on a sample of at least 50 (§11.3). The command samples them in proportion to each kind of error,
+always keeping at least one of each, so a rare false reassurance is never left out.
+
+```bash
+uv run tessera-eval failures --items ../datasets/message_level/test/items.jsonl ../datasets/restricted/message_level/test/items.jsonl --split test --run-dir ../runs/eval/message --coder A --out ../datasets/review
+uv run tessera-eval failures --items ../datasets/message_level/test/items.jsonl ../datasets/restricted/message_level/test/items.jsonl --split test --run-dir ../runs/eval/message --coder B --out ../datasets/review
+```
+
+Each row has the gold and predicted results, a short trace from the event log, and signals: facts
+the log shows for certain, a few of which suggest a mode. A suggestion is only a hint. Rows built
+from DFSA facts go to their own sheet under `datasets/restricted/`.
+
+Write one or more codes in the `codes` column, separated by semicolons: MAST's `FM-1.1` to
+`FM-3.3`, or a code outside MAST for a failure that is not about coordination: `NM-READING`,
+`NM-KNOWLEDGE`, `NM-TOOL`, `NM-PROVIDER` or `NM-LABEL`. The two coders work apart, then:
+
+```bash
+uv run tessera-eval failure-codes --codes ../datasets/review/failures-A.csv --second ../datasets/review/failures-B.csv
+```
+
+This gives Cohen's kappa for each mode, pooled kappa, and the items to discuss. MAST's own coders
+reached 0.88. After discussion, count the settled sheet with `--out` to keep the summary as JSON.
+The same commands take `--condition` to code another system's failures for comparison.
+
+## 13. Tables and figures for the write-up
+
+```bash
+uv run tessera-eval paper --report ../runs/eval/message-report.json --items ../datasets/message_level/test/items.jsonl ../datasets/restricted/message_level/test/items.jsonl --out ../runs/eval/tables
+```
+
+This writes Table 1 (datasets), Table 2 (main results with 95% intervals, and the comparisons) and
+Table 3 (coordination diagnostics), each as Markdown and as LaTeX with booktabs, plus `tables.md`
+with all of them. Nothing is typed by hand, so every number traces back to a run. With `--fiction`,
+every caption and note says the data is fictional, so a pilot's tables cannot pass for results.
+
+It also writes the figures as SVG, each with a CSV of its numbers beside it:
+
+- **Figure 3**, `figure-frontier-<level>.svg`: each system's false reassurance with its interval,
+  beside its requests and tokens per case, one row per system and one axis per measure;
+- **Figure 4**, `figure-ablation-<level>.svg`: the waterfall from CREW-SILO, adding sharing and then
+  challenges to reach CREW-FULL, then removing the Verifier to reach CREW-NV, with SA-BASE as a
+  reference line. It is left out until all four crew conditions have results;
+- **Figure 5**, `figure-factors-<level>.svg`: accuracy on each factor or stratum for every system,
+  darker for higher.
+
+Figures 1 and 2, the architecture and the protocol sequence, are drawn by hand from §6.
+
 ## Filling the Lab
 
 The Lab is built from two files in `frontend/src/data`. Both hold totals and no item text.
