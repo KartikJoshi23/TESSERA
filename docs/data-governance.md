@@ -128,6 +128,18 @@ verify".
 
 ## 7. Release checklist (before sharing any artefact)
 
+First run the machine check on everything you mean to share, from `backend/`:
+
+```bash
+uv run tessera-eval release-check --path <files or folders>
+```
+
+It fails on anything under a `restricted` folder, run logs, `.env`, `PS.md` and register data; on
+the restricted-content marker, DFSA deep links and API keys, by the commit guard's rules; on any
+loaded DFSA value, which it reports by length and never prints; on any VARA name, licence
+reference or domain; and on items marked restricted or entity-level. Files that are not text, such
+as screenshots, are listed for you to check by eye. A pass does not replace the list below.
+
 - [ ] No file from §2 is included.
 - [ ] No DFSA value, DFSA wording or DFSA deep link appears.
 - [ ] No VARA material is copied verbatim. Entity-level data ships only as rehydration recipes.

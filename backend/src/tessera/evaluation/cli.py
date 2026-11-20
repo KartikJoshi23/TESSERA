@@ -46,6 +46,7 @@ from tessera.evaluation.metrics import summarize
 from tessera.evaluation.paper import paper_tables, write_tables
 from tessera.evaluation.plan import jobs_for, load_plan, plan_hash
 from tessera.evaluation.readiness import readiness
+from tessera.evaluation.release import check_release, vara_facts
 from tessera.evaluation.report import evaluation_report, outcomes_by_condition, render_text
 from tessera.evaluation.review import compare_labels, export_sheet, read_sheet, settle
 from tessera.evaluation.scenarios import (
@@ -249,6 +250,25 @@ def _paper(args: argparse.Namespace) -> int:
     for path in [*write_tables(tables, args.out), *write_figures(figures, args.out)]:
         print(path)
     return 0
+
+
+def _release_check(args: argparse.Namespace) -> int:
+    """The data-governance checklist, done by machine, on anything about to be shared."""
+    stack, _, _ = _stack(args, model=False, log=_scratch_log())
+    world, _ = _world(stack)
+    result = check_release(
+        args.path,
+        root=stack.settings.root,
+        restricted=stack.registry.restricted_values(),
+        vara=vara_facts(world),
+    )
+    for problem in result.problems:
+        print(f"problem: {problem}")
+    for name in result.by_eye:
+        print(f"check by eye, not text: {name}")
+    verdict = "passed" if result.passed else f"{len(result.problems)} problems"
+    print(f"{result.files} files checked: {verdict}")
+    return 0 if result.passed else 1
 
 
 def _write_briefs(scenarios: list[Scenario], folder: Path) -> None:
@@ -628,6 +648,10 @@ def build_parser() -> argparse.ArgumentParser:
     paper.add_argument("--fiction", action="store_true", help="mark every table as fictional")
     paper.add_argument("--out", type=Path, required=True, help="a folder")
 
+    release = commands.add_parser("release-check", help="check files before they are shared")
+    common(release)
+    release.add_argument("--path", type=Path, nargs="+", required=True, help="files or folders")
+
     settled = commands.add_parser("settle", help="apply labels settled by discussion")
     settled.add_argument("--items", type=Path, required=True)
     settled.add_argument("--decisions", type=Path, required=True, help="item_id,label as CSV")
@@ -671,6 +695,8 @@ def main(argv: list[str] | None = None) -> int:
             return _failure_codes(args)
         if args.command == "paper":
             return _paper(args)
+        if args.command == "release-check":
+            return _release_check(args)
         return _freeze(args)
     except PolicyError as exc:
         print(f"tessera-eval: {exc}", file=sys.stderr)
