@@ -141,8 +141,10 @@ uv run tessera-eval probe --fiction --items ../runs/eval/messages/dev/items.json
 A run's records hold no gold labels. Labels are joined only when a run is scored. At the free tier's
 real rate of under 4 requests a minute, a full run takes about two weeks of continuous running.
 
-[docs/running-the-evaluation.md](docs/running-the-evaluation.md) gives every step in order, and
-[docs/pre-registration.md](docs/pre-registration.md) holds what is registered.
+[docs/running-the-evaluation.md](docs/running-the-evaluation.md) gives every step in order,
+[docs/pre-registration.md](docs/pre-registration.md) holds what is registered, and
+[docs/write-up-skeleton.md](docs/write-up-skeleton.md) is the frame for the paper, written before
+any result.
 
 ## Modes
 
