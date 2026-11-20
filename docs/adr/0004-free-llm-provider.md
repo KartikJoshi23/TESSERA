@@ -20,8 +20,8 @@
     explicitly so that a change of default cannot alter a run unnoticed. Every condition uses it.
   - **Smaller same-family model** for the capability arm:
     `nvidia/nemotron-3.5-lightning-30b-a3b`.
-  - **Different-family model** for synthetic paraphrase: `mistralai/mistral-large-4-1t-a52b`.
-    Part 6 confirms this one.
+  - **Different-family model** for synthetic paraphrase: `google/gemma-4-31b-it`, since
+    20 Nov 2026. It replaced `mistralai/mistral-large-4-1t-a52b`; see the section at the end.
   - **Every role and alternative** is in `policies/models.yaml`.
 - **Probe criteria** (development data only): at least 95% valid tool calls; at least 95%
   schema-valid output after one repair; a context window of at least 128K tokens, read from the
@@ -81,3 +81,27 @@ alert found only by domain. Its one miss with it off came from the Verifier's ow
 The request gap overstates the case. Most of it came from repeated tool calls, which the runner now
 stops for every condition, so it says little about reasoning itself. These are development cases,
 and they say nothing about final performance.
+
+## The paraphrase model, changed on 20 Nov 2026
+
+The paraphrase step sat for an hour and three quarters and produced nothing. Mistral had begun to
+reason for over 8,000 characters and spend all 2,000 tokens before writing a word, about 150 seconds
+a reply. Its reasoning switch, `chat_template_kwargs.enable_thinking`, was ignored, and
+`reasoning_effort` was refused with HTTP 400. The registered alternative,
+`deepseek-ai/deepseek-v4.1-flash`, reached its end of life on 16 Nov 2026 and returns HTTP 410.
+
+The same paraphrase requests, four each, paced at 4 a minute with the real 360-second timeout:
+
+| Model | Finished | Kept every required string | Kept the service | Time |
+|---|---|---|---|---|
+| `google/gemma-4-31b-it` | 4 of 4 | 4 of 4 | 4 of 4 | 82 to 107 s, about 40 tokens each |
+| `mistralai/mistral-large-4-1t-a52b`, 6,000 tokens | 0 of 4 | - | - | Timed out or dropped at 340 to 360 s |
+
+In single tries, `minimaxai/minimax-m3.1-flash` answered in 9 seconds but changed the look-alike
+domain it was told to keep, which changes the right answer, and `z-ai/glm-5.3-flash` did not answer
+within 170 seconds.
+
+Gemma is a different family from the model under test, as decision D6 asks, and the plan names it
+as an example. It does not reason, so nothing is spent before the text. Most of its time is spent in
+the provider's queue, so paraphrases now run four at a time under the shared rate limit.
+

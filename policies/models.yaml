@@ -37,7 +37,9 @@ roles:
   primary: nvidia/nemotron-3.5-super-vl-120b-a12b
   capability_arm: nvidia/nemotron-3.5-lightning-30b-a3b
   larger_single: nvidia/nemotron-3-ultra-550b-a55b
-  paraphrase: mistralai/mistral-large-4-1t-a52b
+  # Changed on 2026-11-20 (ADR-0004): Mistral now spends its whole allowance reasoning and does
+  # not finish, its reasoning switch is ignored, and the alternative below it was retired.
+  paraphrase: google/gemma-4-31b-it
 
 # What `tessera-probe` measures by default. Pass --models to try anything else.
 candidates:
@@ -49,8 +51,8 @@ candidates:
     - nvidia/nemotron-3-ultra-550b-a55b
     - mistralai/mistral-large-4-1t-a52b
   paraphrase:
+    - google/gemma-4-31b-it
     - mistralai/mistral-large-4-1t-a52b
-    - deepseek-ai/deepseek-v4.1-flash
 
 # Provider-specific request fields, per model. Reasoning is on by default for the primary model.
 # It is stated here so that a change of default cannot alter a run unnoticed. Compared with it off

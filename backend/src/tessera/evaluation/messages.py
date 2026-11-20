@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import random
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -23,6 +24,9 @@ PARAPHRASE_MAX_TOKENS = 2000
 #: gets one more. Nothing about the scenario changes between tries.
 PARAPHRASE_TRIES = 2
 MAX_PARAPHRASE_FAILURES = 3
+#: Paraphrases in flight at once. A reply waits a minute or two in the provider's queue, so one at a
+#: time used a fraction of the rate limit, which the shared limiter still enforces.
+PARAPHRASE_CONCURRENCY = 4
 
 
 @dataclass(frozen=True)
@@ -70,12 +74,17 @@ def to_item(
 
 
 async def paraphrase(stack: CrewStack, scenario: Scenario, text: str) -> str:
-    """Reword a message with a model from another family. Restricted values go as placeholders."""
+    """Reword a message with a model from another family. Restricted values go as placeholders.
+
+    The model's own options in policies/models.yaml apply, as they do to every other request.
+    """
+    model = stack.models.roles["paraphrase"]
     payload = {
-        "model": stack.models.roles["paraphrase"],
+        "model": model,
         "messages": paraphrase_messages(text, scenario.keep),
         "temperature": 0.7,
         "max_tokens": PARAPHRASE_MAX_TOKENS,
+        **stack.models.options_for(model),
     }
     response = await stack.llm.complete(payload)
     return stack.gateway.unmask(response.content or "").strip()
@@ -136,41 +145,71 @@ async def build_message_items(
     ``use_model`` off makes paraphrases into templates, for a dry run with no requests. ``people``
     off does the same for the share people would write. ``echo`` hears of each scenario as it is
     done, so a long run shows where it is.
+
+    Templates are rendered first, in order, so a seed always gives the same texts. Paraphrases then
+    run a few at a time, and results are gathered in scenario order, so the files come out the same
+    way whatever order the replies arrive in.
     """
     rng = random.Random(seed)
     origins = origin_mix(len(scenarios), seed=seed)
-    items: list[EvalItem] = []
     later: list[Scenario] = []
-    dropped: list[str] = []
-    seen: set[str] = set()
-    failures = 0
+    planned: list[tuple[Scenario, str, bool]] = []
     for scenario, origin in zip(scenarios, origins, strict=True):
         if origin == "human" and people:
             later.append(scenario)
             continue
-        text = render_template(scenario, rng)
-        if origin == "paraphrase" and use_model:
+        by_model = origin == "paraphrase" and use_model
+        planned.append((scenario, render_template(scenario, rng), by_model))
+
+    seen: set[str] = set()
+    results: dict[int, tuple[EvalItem | None, list[str]]] = {}
+
+    def settled(index: int, scenario: Scenario, item: EvalItem | None) -> None:
+        echo(f"{scenario.scenario_id}: {'kept as ' + item.origin if item else 'dropped'}")
+
+    for index, (scenario, text, by_model) in enumerate(planned):
+        if not by_model:
+            results[index] = _accept(scenario, text, "template", stack, world, seen, today=today)
+            settled(index, scenario, results[index][0])
+
+    failures = 0
+    stopped = False
+    gate = asyncio.Semaphore(PARAPHRASE_CONCURRENCY)
+
+    async def paraphrased(index: int, scenario: Scenario, template: str) -> None:
+        nonlocal failures, stopped
+        async with gate:
+            if stopped:
+                results[index] = (None, ["not paraphrased: the model kept failing"])
+                return
             echo(f"{scenario.scenario_id}: paraphrasing")
             try:
-                item, problems = await _reworded(scenario, text, stack, world, seen, today=today)
+                results[index] = await _reworded(
+                    scenario, template, stack, world, seen, today=today
+                )
             except LLMError as exc:
                 # What is built so far has cost requests, so a failure must not lose it.
-                dropped.append(f"{scenario.scenario_id}: paraphrase failed ({type(exc).__name__})")
+                results[index] = (None, [f"paraphrase failed ({type(exc).__name__})"])
                 echo(f"{scenario.scenario_id}: paraphrase failed")
                 failures += 1
-                if failures >= MAX_PARAPHRASE_FAILURES:
-                    dropped.append("stopped: the paraphrase model keeps failing")
-                    break
-                continue
+                stopped = stopped or failures >= MAX_PARAPHRASE_FAILURES
+                return
             failures = 0
-        else:
-            item, problems = _accept(scenario, text, "template", stack, world, seen, today=today)
+            settled(index, scenario, results[index][0])
+
+    await asyncio.gather(
+        *(paraphrased(i, s, text) for i, (s, text, by_model) in enumerate(planned) if by_model)
+    )
+    items: list[EvalItem] = []
+    dropped: list[str] = []
+    for index, (scenario, _, _) in enumerate(planned):
+        item, problems = results[index]
         if item is None:
             dropped.append(f"{scenario.scenario_id} ({scenario.recipe}): {'; '.join(problems)}")
-            echo(f"{scenario.scenario_id}: dropped")
         else:
             items.append(item)
-            echo(f"{scenario.scenario_id}: kept as {item.origin}")
+    if stopped:
+        dropped.append("stopped: the paraphrase model keeps failing")
     return MessageSet(tuple(items), tuple(later), tuple(dropped))
 
 

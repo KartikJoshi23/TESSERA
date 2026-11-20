@@ -30,7 +30,12 @@ from tessera.evaluation.items import (
     write_items,
 )
 from tessera.evaluation.labelling import policy_label, with_quotes_from
-from tessera.evaluation.messages import build_message_items, import_written
+from tessera.evaluation.messages import (
+    MAX_PARAPHRASE_FAILURES,
+    PARAPHRASE_CONCURRENCY,
+    build_message_items,
+    import_written,
+)
 from tessera.evaluation.readiness import prompt_check, readiness
 from tessera.evaluation.review import (
     compare_labels,
@@ -60,7 +65,7 @@ from tessera.evaluation.writing import (
 )
 from tessera.governance.policies import load_decision_policy
 from tessera.knowledge import load_activity_taxonomy
-from tessera.llm.config import load_models_policy
+from tessera.llm.config import ModelOptions, load_models_policy
 from tessera.llm.testing import ScriptedTransport, chat_reply
 from tessera.llm.types import TransientLLMError
 from tessera.protocol.common import ResultCode
@@ -440,6 +445,77 @@ async def test_a_refused_paraphrase_is_dropped_after_its_second_try(world, popul
     assert len(calls) == 4, "two paraphrases, two tries each"
     assert "paraphrase" not in [item.origin for item in built.items]
     assert len([line for line in built.dropped if "missing" in line]) == 2
+
+
+@in_loop
+async def test_a_paraphrase_request_carries_the_model_s_own_options(world, populated_settings):
+    """Options in policies/models.yaml, such as switching reasoning off, reach the request."""
+    seen = []
+
+    def reply(payload):
+        seen.append(payload)
+        return with_kept_strings(payload)
+
+    model = MODELS.roles["paraphrase"]
+    options = {"chat_template_kwargs": {"enable_thinking": False}}
+    models = MODELS.model_copy(
+        update={"model_options": {**MODELS.model_options, model: ModelOptions(extra_body=options)}}
+    )
+    stack = build_stack(populated_settings, ScriptedTransport([reply] * 8), EventStore(), models)
+    await build_message_items(
+        public_scenarios(world), stack, world, today=TODAY, seed=2, use_model=True, people=False
+    )
+    assert seen and all(p["chat_template_kwargs"] == {"enable_thinking": False} for p in seen)
+
+
+class SlowFaithful:
+    """A provider that keeps each reply waiting, and counts how many are in flight at once."""
+
+    def __init__(self) -> None:
+        self.in_flight = 0
+        self.most = 0
+
+    async def chat(self, payload):
+        self.in_flight += 1
+        self.most = max(self.most, self.in_flight)
+        await asyncio.sleep(0.01)
+        self.in_flight -= 1
+        return with_kept_strings(payload)
+
+
+@in_loop
+async def test_paraphrases_run_a_few_at_a_time_and_land_in_scenario_order(
+    world, populated_settings
+):
+    """One at a time used a fraction of the rate limit while each reply sat in a queue."""
+    transport = SlowFaithful()
+    stack = build_stack(populated_settings, transport, EventStore(), MODELS)
+    scenarios = [s for s in sample_scenarios(world, 30, seed=7) if not s.restricted][:16]
+    built = await build_message_items(
+        scenarios, stack, world, today=TODAY, seed=2, use_model=True, people=False
+    )
+    assert transport.most == PARAPHRASE_CONCURRENCY
+    order = [s.scenario_id for s in scenarios]
+    kept = [item.scenario_id for item in built.items]
+    assert kept == sorted(kept, key=order.index), "files come out in scenario order"
+    assert "paraphrase" in {item.origin for item in built.items}
+
+
+@in_loop
+async def test_a_failing_model_never_costs_the_templates(world, populated_settings):
+    def reply(payload):
+        raise TransientLLMError("the provider went away")
+
+    stack = build_stack(populated_settings, ScriptedTransport([reply] * 40), EventStore(), MODELS)
+    scenarios = [s for s in sample_scenarios(world, 30, seed=7) if not s.restricted][:16]
+    built = await build_message_items(
+        scenarios, stack, world, today=TODAY, seed=2, use_model=True, people=False
+    )
+    assert built.items and {item.origin for item in built.items} == {"template"}
+    # Sixteen scenarios make eight paraphrases: three fail, and the other five are listed.
+    assert sum("paraphrase failed" in line for line in built.dropped) == MAX_PARAPHRASE_FAILURES
+    assert sum("not paraphrased" in line for line in built.dropped) == 8 - MAX_PARAPHRASE_FAILURES
+    assert built.dropped[-1] == "stopped: the paraphrase model keeps failing"
 
 
 def test_a_paraphrase_is_told_to_keep_the_service_the_same():
