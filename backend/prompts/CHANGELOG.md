@@ -17,6 +17,19 @@ results, so fixes to the code around the prompts do not count.
 
 All fictional data is development data. The test set is built from real records and nobody has seen it.
 
+## Looks at development results
+
+A look is one run of both systems on development data. A revision may follow a look, but need not.
+
+| Look | Date | Data | Single agent | Crew | What followed |
+|---|---|---|---|---|---|
+| 1 | 5 Nov 2026 | 21 fictional messages, nearly all templates | 20 of 21 | 17 of 21 | Crew revision 5 and single-agent revision 1 |
+| 2 | 20 and 21 Nov 2026 | 40 fictional messages, 21 of them paraphrased | 40 of 40 | 40 of 40 | Nothing to act on for either system, so no revision. The single agent's remaining budget stays open for harder development data |
+
+The note the Clone-check agent gets in CREW-SILO (implementation-plan.md F72) is part of that
+condition's design, not a revision. It changes no prompt file, and nothing CREW-FULL or the single
+agent sees.
+
 **Crew: 5 revisions, which is the limit. Single agent: 1.** The single agent's prompt was written
 after revision 3 and shares the crew's guidance files, so it starts from the same knowledge. It must
 get the same number of revisions as the crew before prompts are frozen, each from a look at its own

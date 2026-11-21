@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from tessera.agents.base import Agent, AgentEnv, Task
 from tessera.agents.schemas import CloneCheckOutput, PaymentItem
 from tessera.blackboard.views import clone_view
 from tessera.llm.prompts import render_rule_cards
+from tessera.llm.runner import AgentSpec
 from tessera.protocol.claims import ContactAssessment, PaymentAssessment
 from tessera.protocol.common import AgentId, clip_words
 from tessera.protocol.contacts import ContactRole
@@ -32,6 +34,16 @@ def _as_the_tool_found(env: AgentEnv, payment: PaymentItem | None) -> PaymentIte
     return payment
 
 
+#: With nothing shared, nobody hands this agent a register match, so it finds its own (F72).
+#: Without these it could never reach the official record, and CREW-SILO could never be Consistent.
+ALONE_TOOLS = ("cma_register_lookup", "dfsa_facts_lookup", "vara_register_lookup")
+WORKING_ALONE = (
+    "Nothing is shared in this condition, so no register match is given to you. First search the "
+    "registers yourself for the firm the offer names, with cma_register_lookup, dfsa_facts_lookup "
+    "and vara_register_lookup, and treat each match they return as a register_match."
+)
+
+
 class CloneCheckAgent(Agent):
     agent_id = AgentId.CLN
     output_model = CloneCheckOutput
@@ -52,8 +64,17 @@ class CloneCheckAgent(Agent):
             render_rule_cards(self.rule_card_text(env, "CLONE-")),
         )
 
+    def spec(self, env: AgentEnv, task: Task) -> AgentSpec:
+        spec = super().spec(env, task)
+        if task.options.share:
+            return spec
+        return replace(spec, tool_names=(*spec.tool_names, *ALONE_TOOLS))
+
     def case_data(self, env: AgentEnv, task: Task) -> dict[str, Any]:
-        return clone_view(env.board, task.options)
+        view = clone_view(env.board, task.options)
+        if not task.options.share:
+            view["working_alone"] = WORKING_ALONE
+        return view
 
     def task_text(self, task: Task) -> str:
         if task.kind == "respond":

@@ -619,6 +619,13 @@ def plain_crew(harness, condition: SystemCondition) -> tuple[CrewHarness, list[b
     return setup, saw_findings
 
 
+def test_with_sharing_the_clone_check_agent_gets_no_register_tools(harness):
+    setup, _ = plain_crew(harness, SystemCondition.CREW_SHARE)
+    clone = next(p for p in setup.transport.payloads if agent_of(p) == "CLN")
+    assert "working_alone" not in case_data(clone)
+    assert not {"cma_register_lookup", "vara_register_lookup"} & tool_names_of(clone)
+
+
 def test_without_messages_an_agents_challenge_is_dropped(harness):
     setup, saw_findings = plain_crew(harness, SystemCondition.CREW_SHARE)
     assert saw_findings == [True]  # it could see a finding, and tried to challenge it
@@ -626,11 +633,20 @@ def test_without_messages_an_agents_challenge_is_dropped(harness):
     assert setup.board.rejections == []
 
 
+def tool_names_of(payload):
+    return {tool["function"]["name"] for tool in payload.get("tools", [])}
+
+
 def test_without_sharing_agents_work_alone(harness):
     setup, saw_findings = plain_crew(harness, SystemCondition.CREW_SILO)
     assert saw_findings == [False]
     clone = next(p for p in setup.transport.payloads if agent_of(p) == "CLN")
     assert "regulator_findings" not in case_data(clone)
+    # Alone, the Clone-check agent finds the register entry itself, or it could never compare.
+    assert "working_alone" in case_data(clone)
+    assert {"cma_register_lookup", "dfsa_facts_lookup", "vara_register_lookup"} <= tool_names_of(
+        clone
+    )
     # The Reconciler and the Verifier still see everything, in every condition.
     reconciler = next(p for p in setup.transport.payloads if agent_of(p) == "REC")
     assert case_data(reconciler)["findings"]
